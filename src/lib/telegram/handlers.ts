@@ -247,7 +247,7 @@ async function decidePayment(callback: TgCallback, paymentId: string, approve: b
   const msgIds = (pay.admin_message_ids as any[]) ?? [];
   for (const m of msgIds) {
     await tgSafe("editMessageReplyMarkup", {
-      chat_id: m.chat_id: chatId,
+      chat_id: m.chat_id,
       message_id: m.message_id,
       reply_markup: inlineKeyboard([[{ text: approve ? "✅ Tasdiqlangan" : "❌ Bekor qilingan", callback_data: "noop" }]]),
     });
