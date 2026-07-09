@@ -246,7 +246,7 @@ async function decidePayment(callback: TgCallback, paymentId: string, approve: b
   const msgIds = (pay.admin_message_ids as any[]) ?? [];
   for (const m of msgIds) {
     await tgSafe("editMessageReplyMarkup", {
-      chat_id: m.chat_id,
+      chat_id: m.chat_id: chatId,
       message_id: m.message_id,
       reply_markup: inlineKeyboard([[{ text: approve ? "✅ Tasdiqlangan" : "❌ Bekor qilingan", callback_data: "noop" }]]),
     });
@@ -693,11 +693,11 @@ async function handleAdminFSM(chatId: number, telegramId: number, msg: TgMessage
       const me: any = await tg("getMe");
       const member: any = await tg("getChatMember", { chat_id: resolvedId, user_id: me.id });
       if (!["administrator", "creator"].includes(member.status)) {
-        await tg("sendMessage", { chat_id, text: "⚠️ Bot bu kanalda admin emas. Botni admin qiling va qayta urinib ko'ring." });
+        await tg("sendMessage", { chat_id: chatId, text: "⚠️ Bot bu kanalda admin emas. Botni admin qiling va qayta urinib ko'ring." });
         return true;
       }
     } catch (e) {
-      await tg("sendMessage", { chat_id, text: `❌ Xato: ${(e as Error).message}` });
+      await tg("sendMessage", { chat_id: chatId, text: `❌ Xato: ${(e as Error).message}` });
       return true;
     }
     await db().from("channels").upsert(
@@ -705,7 +705,7 @@ async function handleAdminFSM(chatId: number, telegramId: number, msg: TgMessage
       { onConflict: "chat_id" }
     );
     await clearSession(telegramId);
-    await tg("sendMessage", { chat_id, text: `✅ Kanal qo'shildi: <b>${title}</b>`, parse_mode: "HTML" });
+    await tg("sendMessage", { chat_id: chatId, text: `✅ Kanal qo'shildi: <b>${title}</b>`, parse_mode: "HTML" });
     return true;
   }
 
@@ -717,18 +717,18 @@ async function handleAdminFSM(chatId: number, telegramId: number, msg: TgMessage
   }
 
   if (state === "card:number") {
-    if (!text) { await tg("sendMessage", { chat_id, text: "Karta raqamini yuboring." }); return true; }
+    if (!text) { await tg("sendMessage", { chat_id: chatId, text: "Karta raqamini yuboring." }); return true; }
     await setSession(telegramId, "card:holder", { ...payload, new_number: text });
-    await tg("sendMessage", { chat_id, text: "Endi karta egasining ism-familiyasini yuboring:" });
+    await tg("sendMessage", { chat_id: chatId, text: "Endi karta egasining ism-familiyasini yuboring:" });
     return true;
   }
   if (state === "card:holder") {
-    if (!text) { await tg("sendMessage", { chat_id, text: "Ism-familiya yuboring." }); return true; }
+    if (!text) { await tg("sendMessage", { chat_id: chatId, text: "Ism-familiya yuboring." }); return true; }
     await setSetting("card_number", payload.new_number);
     await setSetting("card_holder", text);
     await clearSession(telegramId);
     await tg("sendMessage", {
-      chat_id, parse_mode: "HTML",
+      chat_id: chatId, parse_mode: "HTML",
       text: `✅ Karta ma'lumoti yangilandi:\n\n💳 <code>${payload.new_number}</code>\n👤 <b>${text}</b>`,
     });
     return true;
