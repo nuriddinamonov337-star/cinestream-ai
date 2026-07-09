@@ -14,13 +14,321 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      admin_sessions: {
+        Row: {
+          payload: Json
+          state: string
+          telegram_id: number
+          updated_at: string
+        }
+        Insert: {
+          payload?: Json
+          state: string
+          telegram_id: number
+          updated_at?: string
+        }
+        Update: {
+          payload?: Json
+          state?: string
+          telegram_id?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      broadcasts: {
+        Row: {
+          created_at: string
+          created_by_telegram_id: number
+          failed_count: number
+          id: string
+          media_file_id: string | null
+          media_file_type: string | null
+          sent_count: number
+          text: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by_telegram_id: number
+          failed_count?: number
+          id?: string
+          media_file_id?: string | null
+          media_file_type?: string | null
+          sent_count?: number
+          text?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by_telegram_id?: number
+          failed_count?: number
+          id?: string
+          media_file_id?: string | null
+          media_file_type?: string | null
+          sent_count?: number
+          text?: string | null
+        }
+        Relationships: []
+      }
+      channels: {
+        Row: {
+          chat_id: number
+          created_at: string
+          id: string
+          invite_link: string | null
+          is_active: boolean
+          title: string
+          username: string | null
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          id?: string
+          invite_link?: string | null
+          is_active?: boolean
+          title: string
+          username?: string | null
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          id?: string
+          invite_link?: string | null
+          is_active?: boolean
+          title?: string
+          username?: string | null
+        }
+        Relationships: []
+      }
+      movies: {
+        Row: {
+          caption: string | null
+          code: string
+          created_at: string
+          file_id: string
+          file_type: string
+          id: string
+          is_premium: boolean
+          source_chat_id: number | null
+          source_message_id: number | null
+          title: string
+          views_count: number
+        }
+        Insert: {
+          caption?: string | null
+          code: string
+          created_at?: string
+          file_id: string
+          file_type?: string
+          id?: string
+          is_premium?: boolean
+          source_chat_id?: number | null
+          source_message_id?: number | null
+          title: string
+          views_count?: number
+        }
+        Update: {
+          caption?: string | null
+          code?: string
+          created_at?: string
+          file_id?: string
+          file_type?: string
+          id?: string
+          is_premium?: boolean
+          source_chat_id?: number | null
+          source_message_id?: number | null
+          title?: string
+          views_count?: number
+        }
+        Relationships: []
+      }
+      payments: {
+        Row: {
+          admin_message_ids: Json | null
+          created_at: string
+          decided_at: string | null
+          decided_by_telegram_id: number | null
+          id: string
+          plan_key: string
+          receipt_file_id: string | null
+          receipt_file_type: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          admin_message_ids?: Json | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by_telegram_id?: number | null
+          id?: string
+          plan_key: string
+          receipt_file_id?: string | null
+          receipt_file_type?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          admin_message_ids?: Json | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by_telegram_id?: number | null
+          id?: string
+          plan_key?: string
+          receipt_file_id?: string | null
+          receipt_file_type?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_plan_key_fkey"
+            columns: ["plan_key"]
+            isOneToOne: false
+            referencedRelation: "premium_plans"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "payments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      premium_plans: {
+        Row: {
+          duration_days: number
+          is_active: boolean
+          key: string
+          price_uzs: number
+          sort_order: number
+          title: string
+        }
+        Insert: {
+          duration_days: number
+          is_active?: boolean
+          key: string
+          price_uzs: number
+          sort_order?: number
+          title: string
+        }
+        Update: {
+          duration_days?: number
+          is_active?: boolean
+          key?: string
+          price_uzs?: number
+          sort_order?: number
+          title?: string
+        }
+        Relationships: []
+      }
+      premium_subscriptions: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          payment_id: string | null
+          plan_key: string
+          started_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          id?: string
+          payment_id?: string | null
+          plan_key: string
+          started_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          payment_id?: string | null
+          plan_key?: string
+          started_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "premium_subscriptions_plan_key_fkey"
+            columns: ["plan_key"]
+            isOneToOne: false
+            referencedRelation: "premium_plans"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "premium_subscriptions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      settings: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
+      users: {
+        Row: {
+          created_at: string
+          first_name: string | null
+          id: string
+          is_blocked: boolean
+          language_code: string | null
+          last_name: string | null
+          last_seen_at: string
+          telegram_id: number
+          updated_at: string
+          username: string | null
+        }
+        Insert: {
+          created_at?: string
+          first_name?: string | null
+          id?: string
+          is_blocked?: boolean
+          language_code?: string | null
+          last_name?: string | null
+          last_seen_at?: string
+          telegram_id: number
+          updated_at?: string
+          username?: string | null
+        }
+        Update: {
+          created_at?: string
+          first_name?: string | null
+          id?: string
+          is_blocked?: boolean
+          language_code?: string | null
+          last_name?: string | null
+          last_seen_at?: string
+          telegram_id?: number
+          updated_at?: string
+          username?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_user_premium: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never
