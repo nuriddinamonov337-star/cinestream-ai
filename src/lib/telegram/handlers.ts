@@ -60,10 +60,11 @@ async function checkSubscriptions(telegramUserId: number) {
 }
 
 function subscribeMessage(missing: any[]) {
-  const rows = missing.map((ch) => {
+  const rows: import("./api").InlineButton[][] = [];
+  for (const ch of missing) {
     const link = ch.invite_link || (ch.username ? `https://t.me/${String(ch.username).replace("@", "")}` : null);
-    return link ? [{ text: `📢 ${ch.title}`, url: link }] : [];
-  }).filter(r => r.length > 0);
+    if (link) rows.push([{ text: `📢 ${ch.title}`, url: link }]);
+  }
   rows.push([{ text: "✅ Tekshirish", callback_data: "check_subs" }]);
   rows.push([{ text: "⭐ Premium sotib olish", callback_data: "premium_menu" }]);
   return {
