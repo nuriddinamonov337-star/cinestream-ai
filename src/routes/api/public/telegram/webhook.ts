@@ -7,10 +7,10 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
       POST: async ({ request }) => {
         try {
           const update = await request.json();
-          // Fire and forget so Telegram receives 200 immediately
-          handleUpdate(update).catch((e) => console.error("[webhook] handler error:", e));
+          // Must await — Cloudflare Workers kill background tasks after response returns
+          await handleUpdate(update);
         } catch (e) {
-          console.error("[webhook] parse error:", e);
+          console.error("[webhook] error:", e);
         }
         return new Response("ok");
       },
