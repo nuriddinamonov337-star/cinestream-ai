@@ -541,6 +541,12 @@ async function onMessage(msg: TgMessage) {
     return;
   }
   if (text === "/admin" && isAdminUser) {
+    // Bootstrap: if admin list is empty, register this user as admin
+    const currentAdmins = await getAdminIds();
+    if (currentAdmins.length === 0) {
+      await setSetting("admin_telegram_ids", [tgUser.id]);
+      await tg("sendMessage", { chat_id: chatId, text: `✅ Siz admin sifatida ro'yxatga olindingiz (ID: <code>${tgUser.id}</code>)`, parse_mode: "HTML" });
+    }
     await sendAdminMenu(chatId);
     return;
   }
