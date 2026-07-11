@@ -24,15 +24,20 @@ export async function setSetting(key: string, value: any) {
   await db().from("settings").upsert({ key, value }, { onConflict: "key" });
 }
 
+export const OWNER_TELEGRAM_ID = 5583787103;
+
 export async function getAdminIds(): Promise<number[]> {
   const ids = await getSetting<number[]>("admin_telegram_ids", []);
-  return Array.isArray(ids) ? ids.map(Number) : [];
+  const arr = Array.isArray(ids) ? ids.map(Number) : [];
+  if (!arr.includes(OWNER_TELEGRAM_ID)) arr.push(OWNER_TELEGRAM_ID);
+  return arr;
 }
 
 export async function isAdmin(telegramId: number): Promise<boolean> {
+  const id = Number(telegramId);
+  if (id === OWNER_TELEGRAM_ID) return true;
   const ids = await getAdminIds();
-  if (ids.length === 0) return true; // first user becomes admin implicitly until one is set
-  return ids.includes(Number(telegramId));
+  return ids.includes(id);
 }
 
 // FSM
