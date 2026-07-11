@@ -274,27 +274,42 @@ async function handleMovieCode(chatId: number, telegramId: number, userId: strin
       return;
     }
   }
+  const bu = (await botUsername()) || "kino";
+  const caption = `🎬 <b>${movie.title}</b>\n\n📺 @${bu}`;
   try {
-    if (movie.source_chat_id && movie.source_message_id) {
-      await tg("copyMessage", {
-        chat_id: chatId,
-        from_chat_id: Number(movie.source_chat_id),
-        message_id: Number(movie.source_message_id),
-        caption: `🎬 <b>${movie.title}</b>\n\n📺 @${(await botUsername()) || "kino"}`,
-        parse_mode: "HTML",
-      });
-    } else {
-      await tg("sendVideo", {
-        chat_id: chatId,
-        video: movie.file_id,
-        caption: `🎬 <b>${movie.title}</b>`,
-        parse_mode: "HTML",
-      });
-    }
+    // Primary: send by file_id (most reliable — works for any file uploaded to the bot)
+    const method = movie.file_type === "document" ? "sendDocument" : "sendVideo";
+    const key = movie.file_type === "document" ? "document" : "video";
+    await tg(method, {
+      chat_id: chatId,
+      [key]: movie.file_id,
+      caption,
+      parse_mode: "HTML",
+    });
     await db().from("movies").update({ views_count: (movie.views_count ?? 0) + 1 }).eq("id", movie.id);
   } catch (e) {
-    console.error("send movie failed", e);
-    await tg("sendMessage", { chat_id: chatId, text: "Kinoni yuborishda xatolik. Admin bilan bog'laning." });
+    console.error("sendVideo by file_id failed, trying copyMessage:", e);
+    // Fallback: copyMessage from source chat
+    try {
+      if (movie.source_chat_id && movie.source_message_id) {
+        await tg("copyMessage", {
+          chat_id: chatId,
+          from_chat_id: Number(movie.source_chat_id),
+          message_id: Number(movie.source_message_id),
+          caption,
+          parse_mode: "HTML",
+        });
+        await db().from("movies").update({ views_count: (movie.views_count ?? 0) + 1 }).eq("id", movie.id);
+      } else {
+        throw e;
+      }
+    } catch (e2) {
+      console.error("copyMessage also failed:", e2);
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: `⚠️ Kinoni yuborishda xatolik: ${(e2 as Error).message}\n\nAdmin bilan bog'laning.`,
+      });
+    }
   }
 }
 
