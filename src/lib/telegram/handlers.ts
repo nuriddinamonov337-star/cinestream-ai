@@ -466,6 +466,20 @@ async function startCardEdit(chatId: number, telegramId: number) {
   });
 }
 
+async function startN8nEdit(chatId: number, telegramId: number) {
+  const current = (await getN8nWebhookUrl()) || "—";
+  await setSession(telegramId, "n8n:url", {});
+  await tg("sendMessage", {
+    chat_id: chatId,
+    text:
+      `🔗 <b>n8n webhook</b>\n\nHozirgi URL: <code>${current}</code>\n\n` +
+      `Yangi n8n webhook URL manzilini yuboring (https:// bilan boshlansin).\n` +
+      `O'chirish uchun <code>-</code> yuboring.`,
+    parse_mode: "HTML",
+    reply_markup: inlineKeyboard([[{ text: "❌ Bekor qilish", callback_data: "adm:cancel" }]]),
+  });
+}
+
 async function runBroadcast(fromTgId: number, msg: TgMessage) {
   const { data: users } = await db().from("users").select("telegram_id").eq("is_blocked", false);
   const total = users?.length ?? 0;
