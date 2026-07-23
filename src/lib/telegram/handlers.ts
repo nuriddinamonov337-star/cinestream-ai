@@ -1,5 +1,7 @@
 import { tg, tgSafe, inlineKeyboard, removeKeyboard } from "./api";
 import { db, getSetting, setSetting, getAdminIds, isAdmin, getSession, setSession, clearSession } from "./db";
+import { notifyMovieCreated, setN8nWebhookUrl, getN8nWebhookUrl } from "./webhook-n8n";
+
 
 type TgUser = { id: number; username?: string; first_name?: string; last_name?: string; language_code?: string };
 type TgMessage = {
@@ -367,7 +369,7 @@ async function sendAdminMenu(chatId: number) {
       [{ text: "🎬 Kino qo'shish", callback_data: "adm:add_movie" }, { text: "🗑 Kino o'chirish", callback_data: "adm:del_movie" }],
       [{ text: "📺 Kanal qo'shish", callback_data: "adm:add_channel" }, { text: "❌ Kanal o'chirish", callback_data: "adm:del_channel" }],
       [{ text: "📊 Statistika", callback_data: "adm:stats" }, { text: "📢 Xabar yuborish", callback_data: "adm:broadcast" }],
-      [{ text: "💳 Karta ma'lumoti", callback_data: "adm:card" }],
+      [{ text: "💳 Karta ma'lumoti", callback_data: "adm:card" }, { text: "🔗 n8n webhook", callback_data: "adm:n8n" }],
     ]),
   });
 }
@@ -459,6 +461,20 @@ async function startCardEdit(chatId: number, telegramId: number) {
   await tg("sendMessage", {
     chat_id: chatId,
     text: `💳 Hozirgi karta: <code>${num}</code>\nEgasi: <b>${holder}</b>\n\nYangi karta raqamini yuboring:`,
+    parse_mode: "HTML",
+    reply_markup: inlineKeyboard([[{ text: "❌ Bekor qilish", callback_data: "adm:cancel" }]]),
+  });
+}
+
+async function startN8nEdit(chatId: number, telegramId: number) {
+  const current = (await getN8nWebhookUrl()) || "—";
+  await setSession(telegramId, "n8n:url", {});
+  await tg("sendMessage", {
+    chat_id: chatId,
+    text:
+      `🔗 <b>n8n webhook</b>\n\nHozirgi URL: <code>${current}</code>\n\n` +
+      `Yangi n8n webhook URL manzilini yuboring (https:// bilan boshlansin).\n` +
+      `O'chirish uchun <code>-</code> yuboring.`,
     parse_mode: "HTML",
     reply_markup: inlineKeyboard([[{ text: "❌ Bekor qilish", callback_data: "adm:cancel" }]]),
   });
@@ -632,6 +648,7 @@ async function onCallback(cb: TgCallback) {
   if (data === "adm:del_channel") return listChannelsForDelete(chatId);
   if (data === "adm:broadcast") return startBroadcast(chatId, telegramId);
   if (data === "adm:card") return startCardEdit(chatId, telegramId);
+  if (data === "adm:n8n") return startN8nEdit(chatId, telegramId);
   if (data.startsWith("adm:delch:")) {
     const id = data.slice("adm:delch:".length);
     await db().from("channels").update({ is_active: false }).eq("id", id);
@@ -661,20 +678,36 @@ async function handleAdminFSM(chatId: number, telegramId: number, msg: TgMessage
   if (state === "add_movie:file") {
     const fileId = msg.video?.file_id || msg.document?.file_id;
     if (!fileId) { await tg("sendMessage", { chat_id: chatId, text: "Iltimos, video faylni yuboring." }); return true; }
-    await db().from("movies").insert({
+    const { data: inserted } = await db().from("movies").insert({
       code: payload.code,
       title: payload.title,
       file_id: fileId,
       file_type: msg.video ? "video" : "document",
       source_chat_id: msg.chat.id,
       source_message_id: msg.message_id,
-    });
+      caption: msg.caption ?? null,
+    }).select("*").single();
     await clearSession(telegramId);
     await tg("sendMessage", {
       chat_id: chatId,
       text: `✅ Kino qo'shildi!\n\n🎬 ${payload.title}\n🔢 Kod: <code>${payload.code}</code>`,
       parse_mode: "HTML",
     });
+    // Fire-and-await n8n webhook (best effort, errors are logged)
+    try {
+      await notifyMovieCreated({
+        id: inserted?.id,
+        code: payload.code,
+        title: payload.title,
+        caption: msg.caption ?? null,
+        file_id: fileId,
+        file_type: msg.video ? "video" : "document",
+        is_premium: false,
+        created_at: inserted?.created_at,
+      });
+    } catch (e) {
+      console.error("[n8n] notifyMovieCreated threw", e);
+    }
     return true;
   }
 
@@ -750,6 +783,27 @@ async function handleAdminFSM(chatId: number, telegramId: number, msg: TgMessage
     await tg("sendMessage", {
       chat_id: chatId, parse_mode: "HTML",
       text: `✅ Karta ma'lumoti yangilandi:\n\n💳 <code>${payload.new_number}</code>\n👤 <b>${text}</b>`,
+    });
+    return true;
+  }
+
+  if (state === "n8n:url") {
+    if (!text) { await tg("sendMessage", { chat_id: chatId, text: "URL yuboring yoki o'chirish uchun -" }); return true; }
+    if (text === "-") {
+      await setN8nWebhookUrl("");
+      await clearSession(telegramId);
+      await tg("sendMessage", { chat_id: chatId, text: "🗑 n8n webhook URL o'chirildi." });
+      return true;
+    }
+    if (!/^https?:\/\//i.test(text)) {
+      await tg("sendMessage", { chat_id: chatId, text: "❌ URL http:// yoki https:// bilan boshlanishi kerak." });
+      return true;
+    }
+    await setN8nWebhookUrl(text);
+    await clearSession(telegramId);
+    await tg("sendMessage", {
+      chat_id: chatId, parse_mode: "HTML",
+      text: `✅ n8n webhook URL saqlandi:\n<code>${text}</code>\n\nEndi har yangi kino qo'shilganda ushbu URL ga POST yuboriladi.`,
     });
     return true;
   }
