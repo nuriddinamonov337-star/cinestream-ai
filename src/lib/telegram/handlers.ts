@@ -369,7 +369,7 @@ async function sendAdminMenu(chatId: number) {
       [{ text: "🎬 Kino qo'shish", callback_data: "adm:add_movie" }, { text: "🗑 Kino o'chirish", callback_data: "adm:del_movie" }],
       [{ text: "📺 Kanal qo'shish", callback_data: "adm:add_channel" }, { text: "❌ Kanal o'chirish", callback_data: "adm:del_channel" }],
       [{ text: "📊 Statistika", callback_data: "adm:stats" }, { text: "📢 Xabar yuborish", callback_data: "adm:broadcast" }],
-      [{ text: "💳 Karta ma'lumoti", callback_data: "adm:card" }],
+      [{ text: "💳 Karta ma'lumoti", callback_data: "adm:card" }, { text: "🔗 n8n webhook", callback_data: "adm:n8n" }],
     ]),
   });
 }
