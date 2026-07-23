@@ -663,20 +663,36 @@ async function handleAdminFSM(chatId: number, telegramId: number, msg: TgMessage
   if (state === "add_movie:file") {
     const fileId = msg.video?.file_id || msg.document?.file_id;
     if (!fileId) { await tg("sendMessage", { chat_id: chatId, text: "Iltimos, video faylni yuboring." }); return true; }
-    await db().from("movies").insert({
+    const { data: inserted } = await db().from("movies").insert({
       code: payload.code,
       title: payload.title,
       file_id: fileId,
       file_type: msg.video ? "video" : "document",
       source_chat_id: msg.chat.id,
       source_message_id: msg.message_id,
-    });
+      caption: msg.caption ?? null,
+    }).select("*").single();
     await clearSession(telegramId);
     await tg("sendMessage", {
       chat_id: chatId,
       text: `✅ Kino qo'shildi!\n\n🎬 ${payload.title}\n🔢 Kod: <code>${payload.code}</code>`,
       parse_mode: "HTML",
     });
+    // Fire-and-await n8n webhook (best effort, errors are logged)
+    try {
+      await notifyMovieCreated({
+        id: inserted?.id,
+        code: payload.code,
+        title: payload.title,
+        caption: msg.caption ?? null,
+        file_id: fileId,
+        file_type: msg.video ? "video" : "document",
+        is_premium: false,
+        created_at: inserted?.created_at,
+      });
+    } catch (e) {
+      console.error("[n8n] notifyMovieCreated threw", e);
+    }
     return true;
   }
 
