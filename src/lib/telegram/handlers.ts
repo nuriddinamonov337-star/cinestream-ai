@@ -634,6 +634,7 @@ async function onCallback(cb: TgCallback) {
   if (data === "adm:del_channel") return listChannelsForDelete(chatId);
   if (data === "adm:broadcast") return startBroadcast(chatId, telegramId);
   if (data === "adm:card") return startCardEdit(chatId, telegramId);
+  if (data === "adm:n8n") return startN8nEdit(chatId, telegramId);
   if (data.startsWith("adm:delch:")) {
     const id = data.slice("adm:delch:".length);
     await db().from("channels").update({ is_active: false }).eq("id", id);
