@@ -787,5 +787,26 @@ async function handleAdminFSM(chatId: number, telegramId: number, msg: TgMessage
     return true;
   }
 
+  if (state === "n8n:url") {
+    if (!text) { await tg("sendMessage", { chat_id: chatId, text: "URL yuboring yoki o'chirish uchun -" }); return true; }
+    if (text === "-") {
+      await setN8nWebhookUrl("");
+      await clearSession(telegramId);
+      await tg("sendMessage", { chat_id: chatId, text: "🗑 n8n webhook URL o'chirildi." });
+      return true;
+    }
+    if (!/^https?:\/\//i.test(text)) {
+      await tg("sendMessage", { chat_id: chatId, text: "❌ URL http:// yoki https:// bilan boshlanishi kerak." });
+      return true;
+    }
+    await setN8nWebhookUrl(text);
+    await clearSession(telegramId);
+    await tg("sendMessage", {
+      chat_id: chatId, parse_mode: "HTML",
+      text: `✅ n8n webhook URL saqlandi:\n<code>${text}</code>\n\nEndi har yangi kino qo'shilganda ushbu URL ga POST yuboriladi.`,
+    });
+    return true;
+  }
+
   return false;
 }
