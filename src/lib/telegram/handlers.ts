@@ -692,6 +692,11 @@ async function onCallback(cb: TgCallback) {
     }
     return;
   }
+  if (data === "reels_start") return startReels(chatId, telegramId);
+  if (data === "reels_cancel") {
+    await clearSession(telegramId);
+    return tg("sendMessage", { chat_id: chatId, text: "Bekor qilindi." });
+  }
   if (data === "premium_menu") return sendPremiumMenu(chatId);
   if (data === "my_stats") return sendStats(chatId, telegramId, user.id);
   if (data === "how_to") {
