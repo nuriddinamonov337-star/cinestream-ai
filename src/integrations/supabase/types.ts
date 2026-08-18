@@ -266,6 +266,42 @@ export type Database = {
           },
         ]
       }
+      reels_jobs: {
+        Row: {
+          chat_id: number
+          completed_at: string | null
+          created_at: string
+          error: string | null
+          id: string
+          result_url: string | null
+          source_url: string
+          status: string
+          telegram_id: number
+        }
+        Insert: {
+          chat_id: number
+          completed_at?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          result_url?: string | null
+          source_url: string
+          status?: string
+          telegram_id: number
+        }
+        Update: {
+          chat_id?: number
+          completed_at?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          result_url?: string | null
+          source_url?: string
+          status?: string
+          telegram_id?: number
+        }
+        Relationships: []
+      }
       settings: {
         Row: {
           key: string
