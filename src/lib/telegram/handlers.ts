@@ -79,6 +79,7 @@ function subscribeMessage(missing: any[]) {
 async function sendMainMenu(chatId: number, isAdminUser: boolean) {
   const keyboard: any[][] = [
     [{ text: "🎬 Kino kodini kiriting", callback_data: "how_to" }],
+    [{ text: "🎞 Reels yasash", callback_data: "reels_start" }],
     [{ text: "⭐ Premium", callback_data: "premium_menu" }, { text: "📊 Mening statusim", callback_data: "my_stats" }],
   ];
   if (isAdminUser) keyboard.push([{ text: "🛠 Admin panel", callback_data: "admin_menu" }]);
