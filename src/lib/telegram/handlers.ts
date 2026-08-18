@@ -614,6 +614,11 @@ async function onMessage(msg: TgMessage) {
     if (await handleReceipt(chatId, tgUser.id, msg)) return;
   }
 
+  // Reels link (any user)
+  if (sess?.state === "reels:link" && text && !text.startsWith("/")) {
+    if (await handleReelsLink(chatId, tgUser.id, text)) return;
+  }
+
   // Commands
   if (text === "/start") {
     await clearSession(tgUser.id);
