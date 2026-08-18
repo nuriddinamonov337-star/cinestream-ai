@@ -1,96 +1,59 @@
+# Kino link → n8n → Instagram Reels
 
-# Telegram Kino Bot
+Bot foydalanuvchidan UzMovie/Asil Media havolasini oladi, uni n8n ish oqimiga uzatadi, n8n (OpenShorts + Gemini) qisqa Reels tayyorlaydi va tayyor video foydalanuvchiga Telegram orqali qaytadi.
 
-Python `aiogram` o'rniga bot butunlay **Lovable Cloud + Telegram webhook** ustida ishlaydi. Foydalanuvchi Telegramda bot bilan gaplashadi, xabarlar `/api/public/telegram/webhook` ga keladi, TanStack server route uni ishlaydi va Telegram Bot API'ga javob yuboradi. Kino fayllari, foydalanuvchilar, kanallar, premium va to'lovlar Lovable Cloud'da (Postgres + Storage) saqlanadi.
+## Muhim bir tuzatish
 
-Sizga faqat: (1) BotFather'dan bot yaratib token olish va Telegram connector'ga ulash, (2) admin Telegram ID'ni kiritish, (3) kartani ma'lumotini kiritish kerak.
+Sizning rejangizda n8n'da **Telegram Trigger** ishlatilgan. Bu ishlamaydi: bitta bot tokeni uchun Telegram faqat **bitta** webhook manzilini qabul qiladi, hozir u bizning botimizga (`/api/public/telegram/webhook`) ulangan. Agar n8n Telegram Trigger qo'yilsa, mavjud bot (kino kodlari, premium, admin panel) butunlay o'chib qoladi.
 
-## Foydalanuvchi oqimi (Telegramda)
+Yechim: n8n'da Telegram Trigger o'rniga oddiy **Webhook node** ishlatiladi. Bot linkni o'sha Webhook URL ga o'zi POST qiladi. Qolgan 4 node (HTTP Request → Wait → HTTP Request → Telegram Send Document) o'zgarishsiz qoladi.
 
-**/start**
-- Bot foydalanuvchini `users` jadvaliga qo'shadi (yoki mavjudini yangilaydi).
-- `channels` jadvalidagi barcha majburiy kanallar ro'yxatini oladi.
-- Har biri uchun `getChatMember` chaqirib obuna holatini tekshiradi.
-- Agar birortasiga obuna bo'lmagan bo'lsa — obuna havolalari + `✅ Tekshirish` va `⭐ Premium` tugmalari bilan xabar chiqadi. Bot boshqa hech nima qilmaydi.
-- Hammasiga obuna bo'lsa — asosiy menyu: `🎬 Kino kodi kiriting`, `⭐ Premium`, `📊 /stats`.
+## Botdagi oqim
 
-**Kino kodi**
-- Foydalanuvchi raqam yuboradi (masalan `245`).
-- Bot avval qayta obuna tekshiradi (bekor qilish holatiga qarshi). Obuna yo'q bo'lsa — obuna xabari.
-- `movies` jadvalidan kod bo'yicha topadi. Yo'q bo'lsa — "Bunday kod topilmadi" javobi.
-- Kino `is_premium=true` bo'lsa va foydalanuvchi premium emas bo'lsa — premium taklifi.
-- Aks holda `copyMessage` orqali kinoni (arxiv kanaldan) foydalanuvchiga yuboradi va `views_count` ni oshiradi.
+1. Asosiy menyuga **🎞 Reels yasash** tugmasi qo'shiladi.
+2. Bosilganda bot: "UzMovie yoki Asil Media havolasini yuboring" deydi (FSM holati `reels:link`).
+3. Foydalanuvchi link yuboradi → bot linkni tekshiradi (http/https bo'lishi kerak).
+4. Bot n8n Reels webhook URL ga POST yuboradi:
 
-**⭐ Premium**
-- Bot 2 ta tarifni ko'rsatadi: 1 hafta — 15 000 so'm, 1 oy — 20 000 so'm.
-- Foydalanuvchi tarifni tanlaydi → bot karta raqami + karta egasi ism-familiyasi + "chekni rasm ko'rinishida yuboring" xabarini yuboradi.
-- Foydalanuvchi rasm/hujjat sifatida chek yuboradi → bot uni `payments` jadvaliga `pending` holatida yozadi, adminlarga (Telegram ID lar) `✅ Tasdiqlash` / `❌ Bekor qilish` tugmalari bilan yo'naltiradi.
-- Admin `✅` bossa — `premium` jadvaliga yozuv qo'shiladi (tugash sanasi = hozir + tarif), foydalanuvchiga "Premium faollashtirildi" xabari boradi. `❌` — foydalanuvchiga "Chek qabul qilinmadi" xabari.
-
-**/stats**
-- Foydalanuvchining Telegram ID, premium turi (Yo'q / 1 hafta / 1 oy), tugash sanasi, qolgan kun soni, holati (Faol / Muddati o'tgan) ko'rsatiladi.
-
-## Admin panel
-
-**Ichida (Telegram):**
-- `/admin` — faqat `ADMIN_TELEGRAM_IDS` ro'yxatidagilarga ochiladi.
-- Inline tugmalar: 🎬 Kino qo'shish • 🗑 Kino o'chirish • 📊 Statistika • 📢 Xabar yuborish • 📺 Majburiy kanal qo'shish • ❌ Majburiy kanal o'chirish.
-- **Kino qo'shish**: bot "Kino nomini yuboring" → "Kodni yuboring" → "Kino faylini (video) yuboring" (FSM davlati Cloud'da `admin_sessions` jadvalida). Fayl `file_id` sifatida saqlanadi + arxiv kanalga forward qilinadi, keyin foydalanuvchilarga shu yerdan `copyMessage` qilinadi.
-- **Kino o'chirish**: kod so'raladi → tasdiq → o'chiriladi.
-- **Statistika**: umumiy foydalanuvchi, bugun qo'shilganlar, jami premium, faol premium, jami kino, top 5 ko'rilgan kino, tushum (tasdiqlangan to'lovlar).
-- **Xabar yuborish (broadcast)**: matn (yoki matn + rasm) so'raladi → tasdiq → barcha `users` ga navbat bilan yuboriladi (429 rate-limit'ga qarshi kichik pauza), natijada nechtaga yetkazilgani hisoboti.
-- **Majburiy kanal qo'shish**: kanal `@username` yoki `-100...` chat ID so'raladi. Bot avval o'zi kanalda admin ekanligini `getChatAdministrators` orqali tekshiradi, keyin qo'shadi.
-- **Majburiy kanal o'chirish**: ro'yxatdan tanlash orqali.
-
-**Web admin (qo'shimcha)** — hamma narsani telefondagi Telegramda qilsa bo'ladi, lekin katta ekranda qulay bo'lishi uchun mini web panel ham beriladi (Lovable auth bilan, faqat siz kirasiz): kino ro'yxati/qidiruv, foydalanuvchilar, to'lovlar tarixi, statistika grafiklari, broadcast. Bot funksiyalari to'liq — web ixtiyoriy.
-
-## Ma'lumotlar bazasi (Lovable Cloud)
-
-- `users` — telegram_id (uniq), username, first_name, joined_at, is_blocked
-- `channels` — chat_id, username, title, invite_link, added_at
-- `movies` — code (uniq), title, file_id, source_chat_id, source_message_id, is_premium, views_count, added_at
-- `premium_plans` — key ('week'/'month'), title, price_uzs, duration_days
-- `premium_subscriptions` — user_id, plan_key, started_at, expires_at, source_payment_id
-- `payments` — user_id, plan_key, receipt_file_id, status ('pending'/'approved'/'rejected'), created_at, decided_at, decided_by
-- `admin_sessions` — user_id, state, payload jsonb (FSM uchun)
-- `broadcasts` — text, media_file_id, sent_count, failed_count, created_at
-- `settings` — key/value (karta raqami, karta egasi, admin ID lar)
-
-RLS: hamma jadval faqat service_role uchun ochiq (webhook va admin server functions orqali kiriladi), web admin uchun `has_role('admin')` policy.
-
-## Texnik strukturasi
-
-```
-src/routes/api/public/telegram/webhook.ts   # Asosiy webhook — barcha update'lar
-src/lib/telegram/
-  ├── api.ts              # sendMessage, copyMessage, getChatMember (gateway orqali)
-  ├── handlers/
-  │   ├── start.ts
-  │   ├── subscription.ts # kanal tekshiruvi
-  │   ├── movies.ts       # kod → kino yuborish
-  │   ├── premium.ts      # tariflar, chek qabul qilish
-  │   ├── stats.ts
-  │   ├── admin.ts        # /admin menyu
-  │   ├── admin_movies.ts # FSM: qo'shish/o'chirish
-  │   ├── admin_channels.ts
-  │   └── broadcast.ts
-  ├── fsm.ts              # admin_sessions'dan state olish/yozish
-  └── keyboards.ts        # inline tugmalar
-src/routes/_authenticated/admin/*.tsx       # ixtiyoriy web admin
+```json
+{
+  "event": "reels.requested",
+  "job_ref": "<uuid>",
+  "chat_id": 123456789,
+  "telegram_id": 123456789,
+  "url": "https://asilmedia.org/...",
+  "requested_at": "2026-08-18T08:00:00Z"
+}
 ```
 
-## Sozlash bosqichlari
+5. Foydalanuvchiga: "⏳ Qabul qilindi. Video tayyor bo'lgach yuboriladi (2–5 daqiqa)."
+6. n8n oxirgi node'da tayyor video URL ni to'g'ridan-to'g'ri Telegram Send Document orqali `chat_id` ga yuboradi. (Xohlasangiz n8n callback route'ga POST qilishi ham mumkin — pastda.)
 
-1. Lovable Cloud yoqiladi, jadvallar migratsiya.
-2. Telegram connector: `standard_connectors--connect` orqali ulanadi (siz BotFather tokenini kiritasiz).
-3. Webhook route deploy bo'ladi, keyin sandboxdan `setWebhook` chaqiriladi (secret token bilan).
-4. Siz Telegramda `/start` yuborasiz → bot sizning Telegram ID ni beradi → siz uni `settings.admin_ids` ga qo'shasiz (yoki dastlabki migratsiyada berilgan ID yoziladi).
-5. `/admin` → majburiy kanallar va kinolar qo'shiladi.
+## Cheklovlar (ochiq aytaman)
 
-## Nima bu bosqichda YO'Q
+- Har bir so'rov Render'dagi OpenShorts serveriga bog'liq. Bepul Render 15 daqiqa harakatsizlikdan keyin uxlaydi — birinchi so'rov 1 daqiqagacha kechikadi va Wait vaqti yetmasligi mumkin.
+- Telegram bot fayl yuborish limiti 50 MB. Reels kliplari odatda kichik, muammo bo'lmasligi kerak.
+- OpenShorts UzMovie/Asil Media linklarini o'zi yuklab ololmasligi mumkin (ular yt-dlp qo'llab-quvvatlamaydigan sayt bo'lsa). Bu n8n/OpenShorts tomonidagi masala — bot faqat linkni uzatadi.
+- Mualliflik huquqi: boshqa saytlarning kinolaridan Reels yasab tarqatish bloklanishga olib kelishi mumkin.
 
-- Instagram uchun AI reklama video (avvalgi so'rovingiz) — bu keyingi qadamda alohida modul sifatida qo'shiladi, ho'zir e'tibor faqat botga.
-- Avtomatik to'lov (Click/Payme) — hozir faqat qo'lda chek + admin tasdig'i. Keyin qo'shsa bo'ladi.
-- Kinoni AI ko'rib qiziq joylarini kesish (imkonsiz).
+## Sozlamalar
 
-Tasdiqlasangiz — Cloud'ni yoqib, Telegram connector'ini so'raymiz va qurishni boshlaymiz.
+Admin panelga (`/admin`) yangi tugma: **🎞 Reels webhook** — n8n Webhook node'ining Production URL ini kiritish/o'chirish. Mavjud `🔗 n8n webhook` (yangi kino qo'shilganda ishlaydigan) alohida qoladi — ikki xil vazifa, ikki xil URL.
+
+Ixtiyoriy fallback env: `N8N_REELS_WEBHOOK_URL`.
+
+## Texnik o'zgarishlar
+
+- `src/lib/telegram/reels.ts` (yangi) — `getReelsWebhookUrl()`, `setReelsWebhookUrl()`, `requestReels({chat_id, url})`; har urinish mavjud `webhook_logs` jadvaliga `event: 'reels.requested'` bilan yoziladi.
+- Migratsiya: `reels_jobs` jadvali — `id`, `telegram_id`, `chat_id`, `source_url`, `status` (`pending`/`sent`/`failed`), `result_url`, `error`, `created_at`, `completed_at`. RLS yoqiladi, faqat `service_role` uchun grant.
+- `src/lib/telegram/handlers.ts` — menyuga `🎞 Reels yasash` tugmasi, `reels:link` FSM holati, admin menyuga `adm:reels` tugmasi va `reels:url` holati.
+- `src/routes/api/public/n8n/reels-callback.ts` (yangi, ixtiyoriy) — n8n tayyor video URL ni shu yerga POST qilsa, bot o'zi foydalanuvchiga yuboradi va `reels_jobs` ni `sent` ga o'tkazadi. Himoya: `X-Reels-Secret` header (`TELEGRAM_API_KEY` dan SHA-256 hosila, `setWebhook` dagi kabi).
+- `src/routes/index.tsx` — qo'llanmaga Reels bo'limi qo'shiladi.
+
+## n8n tomonida siz qiladigan ish
+
+1. Telegram Trigger o'rniga **Webhook (POST)** node qo'ying, Production URL ni ko'chiring.
+2. HTTP Request (1): `url = {{ $json.url }}`, `acknowledged = true`, header `X-Gemini-Key`.
+3. Wait → HTTP Request (2) `/api/status/{{ $json.job_id }}`.
+4. Telegram Send Document: `chat_id = {{ $('Webhook').item.json.chat_id }}`, document = `{{ $json.data.clips[0].url }}`.
+5. URL ni botda `/admin` → 🎞 Reels webhook ga kiriting.
