@@ -1,6 +1,7 @@
 import { tg, tgSafe, inlineKeyboard, removeKeyboard } from "./api";
 import { db, getSetting, setSetting, getAdminIds, isAdmin, getSession, setSession, clearSession } from "./db";
 import { notifyMovieCreated, setN8nWebhookUrl, getN8nWebhookUrl } from "./webhook-n8n";
+import { requestReels, getReelsWebhookUrl, setReelsWebhookUrl, reelsSecret } from "./reels";
 
 
 type TgUser = { id: number; username?: string; first_name?: string; last_name?: string; language_code?: string };
@@ -78,6 +79,7 @@ function subscribeMessage(missing: any[]) {
 async function sendMainMenu(chatId: number, isAdminUser: boolean) {
   const keyboard: any[][] = [
     [{ text: "🎬 Kino kodini kiriting", callback_data: "how_to" }],
+    [{ text: "🎞 Reels yasash", callback_data: "reels_start" }],
     [{ text: "⭐ Premium", callback_data: "premium_menu" }, { text: "📊 Mening statusim", callback_data: "my_stats" }],
   ];
   if (isAdminUser) keyboard.push([{ text: "🛠 Admin panel", callback_data: "admin_menu" }]);
@@ -370,6 +372,7 @@ async function sendAdminMenu(chatId: number) {
       [{ text: "📺 Kanal qo'shish", callback_data: "adm:add_channel" }, { text: "❌ Kanal o'chirish", callback_data: "adm:del_channel" }],
       [{ text: "📊 Statistika", callback_data: "adm:stats" }, { text: "📢 Xabar yuborish", callback_data: "adm:broadcast" }],
       [{ text: "💳 Karta ma'lumoti", callback_data: "adm:card" }, { text: "🔗 n8n webhook", callback_data: "adm:n8n" }],
+      [{ text: "🎞 Reels webhook", callback_data: "adm:reels" }],
     ]),
   });
 }
@@ -480,6 +483,71 @@ async function startN8nEdit(chatId: number, telegramId: number) {
   });
 }
 
+async function startReelsAdminEdit(chatId: number, telegramId: number) {
+  const current = (await getReelsWebhookUrl()) || "—";
+  await setSession(telegramId, "reels:url", {});
+  await tg("sendMessage", {
+    chat_id: chatId,
+    text:
+      `🎞 <b>Reels webhook (n8n)</b>\n\nHozirgi URL: <code>${current}</code>\n\n` +
+      `n8n dagi <b>Webhook (POST)</b> node ning Production URL ini yuboring.\n` +
+      `O'chirish uchun <code>-</code> yuboring.\n\n` +
+      `Callback maxfiy kaliti:\n<code>${reelsSecret()}</code>`,
+    parse_mode: "HTML",
+    reply_markup: inlineKeyboard([[{ text: "❌ Bekor qilish", callback_data: "adm:cancel" }]]),
+  });
+}
+
+// ---------- REELS (user flow) ----------
+async function startReels(chatId: number, telegramId: number) {
+  const url = await getReelsWebhookUrl();
+  if (!url) {
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: "⚠️ Reels xizmati hozircha sozlanmagan. Keyinroq urinib ko'ring.",
+    });
+    return;
+  }
+  await setSession(telegramId, "reels:link", {});
+  await tg("sendMessage", {
+    chat_id: chatId,
+    text:
+      "🎞 <b>Instagram Reels yasash</b>\n\n" +
+      "UzMovie, Asil Media yoki YouTube havolasini yuboring.\n" +
+      "AI videodan eng qiziq lavhalarni topib, 9:16 formatda qisqa video tayyorlaydi.\n\n" +
+      "⏳ Odatda 2–5 daqiqa vaqt oladi.",
+    parse_mode: "HTML",
+    reply_markup: inlineKeyboard([[{ text: "❌ Bekor qilish", callback_data: "reels_cancel" }]]),
+  });
+}
+
+async function handleReelsLink(chatId: number, telegramId: number, text: string): Promise<boolean> {
+  if (!/^https?:\/\/\S+$/i.test(text)) {
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: "❌ Bu havolaga o'xshamaydi. To'liq havola yuboring (https:// bilan).",
+    });
+    return true;
+  }
+  await clearSession(telegramId);
+  const res = await requestReels({ telegramId, chatId, url: text });
+  if (res.ok) {
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: "✅ Qabul qilindi!\n\n⏳ Video tayyor bo'lgach shu yerga yuboriladi (2–5 daqiqa).",
+    });
+  } else if (res.reason === "no_url") {
+    await tg("sendMessage", { chat_id: chatId, text: "⚠️ Reels xizmati sozlanmagan." });
+  } else {
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: `❌ So'rov yuborilmadi. Keyinroq urinib ko'ring.\n<code>${res.message ?? ""}</code>`,
+      parse_mode: "HTML",
+    });
+  }
+  return true;
+}
+
 async function runBroadcast(fromTgId: number, msg: TgMessage) {
   const { data: users } = await db().from("users").select("telegram_id").eq("is_blocked", false);
   const total = users?.length ?? 0;
@@ -544,6 +612,11 @@ async function onMessage(msg: TgMessage) {
   // Awaiting receipt (any user)
   if (sess?.state === "awaiting_receipt") {
     if (await handleReceipt(chatId, tgUser.id, msg)) return;
+  }
+
+  // Reels link (any user)
+  if (sess?.state === "reels:link" && text && !text.startsWith("/")) {
+    if (await handleReelsLink(chatId, tgUser.id, text)) return;
   }
 
   // Commands
@@ -619,6 +692,11 @@ async function onCallback(cb: TgCallback) {
     }
     return;
   }
+  if (data === "reels_start") return startReels(chatId, telegramId);
+  if (data === "reels_cancel") {
+    await clearSession(telegramId);
+    return tg("sendMessage", { chat_id: chatId, text: "Bekor qilindi." });
+  }
   if (data === "premium_menu") return sendPremiumMenu(chatId);
   if (data === "my_stats") return sendStats(chatId, telegramId, user.id);
   if (data === "how_to") {
@@ -649,6 +727,7 @@ async function onCallback(cb: TgCallback) {
   if (data === "adm:broadcast") return startBroadcast(chatId, telegramId);
   if (data === "adm:card") return startCardEdit(chatId, telegramId);
   if (data === "adm:n8n") return startN8nEdit(chatId, telegramId);
+  if (data === "adm:reels") return startReelsAdminEdit(chatId, telegramId);
   if (data.startsWith("adm:delch:")) {
     const id = data.slice("adm:delch:".length);
     await db().from("channels").update({ is_active: false }).eq("id", id);
@@ -804,6 +883,27 @@ async function handleAdminFSM(chatId: number, telegramId: number, msg: TgMessage
     await tg("sendMessage", {
       chat_id: chatId, parse_mode: "HTML",
       text: `✅ n8n webhook URL saqlandi:\n<code>${text}</code>\n\nEndi har yangi kino qo'shilganda ushbu URL ga POST yuboriladi.`,
+    });
+    return true;
+  }
+
+  if (state === "reels:url") {
+    if (!text) { await tg("sendMessage", { chat_id: chatId, text: "URL yuboring yoki o'chirish uchun -" }); return true; }
+    if (text === "-") {
+      await setReelsWebhookUrl("");
+      await clearSession(telegramId);
+      await tg("sendMessage", { chat_id: chatId, text: "🗑 Reels webhook URL o'chirildi." });
+      return true;
+    }
+    if (!/^https?:\/\//i.test(text)) {
+      await tg("sendMessage", { chat_id: chatId, text: "❌ URL http:// yoki https:// bilan boshlanishi kerak." });
+      return true;
+    }
+    await setReelsWebhookUrl(text);
+    await clearSession(telegramId);
+    await tg("sendMessage", {
+      chat_id: chatId, parse_mode: "HTML",
+      text: `✅ Reels webhook saqlandi:\n<code>${text}</code>\n\nEndi foydalanuvchi havola yuborsa, u shu URL ga POST qilinadi.`,
     });
     return true;
   }
