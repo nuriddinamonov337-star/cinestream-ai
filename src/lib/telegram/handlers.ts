@@ -887,5 +887,26 @@ async function handleAdminFSM(chatId: number, telegramId: number, msg: TgMessage
     return true;
   }
 
+  if (state === "reels:url") {
+    if (!text) { await tg("sendMessage", { chat_id: chatId, text: "URL yuboring yoki o'chirish uchun -" }); return true; }
+    if (text === "-") {
+      await setReelsWebhookUrl("");
+      await clearSession(telegramId);
+      await tg("sendMessage", { chat_id: chatId, text: "🗑 Reels webhook URL o'chirildi." });
+      return true;
+    }
+    if (!/^https?:\/\//i.test(text)) {
+      await tg("sendMessage", { chat_id: chatId, text: "❌ URL http:// yoki https:// bilan boshlanishi kerak." });
+      return true;
+    }
+    await setReelsWebhookUrl(text);
+    await clearSession(telegramId);
+    await tg("sendMessage", {
+      chat_id: chatId, parse_mode: "HTML",
+      text: `✅ Reels webhook saqlandi:\n<code>${text}</code>\n\nEndi foydalanuvchi havola yuborsa, u shu URL ga POST qilinadi.`,
+    });
+    return true;
+  }
+
   return false;
 }
