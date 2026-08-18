@@ -482,6 +482,71 @@ async function startN8nEdit(chatId: number, telegramId: number) {
   });
 }
 
+async function startReelsAdminEdit(chatId: number, telegramId: number) {
+  const current = (await getReelsWebhookUrl()) || "—";
+  await setSession(telegramId, "reels:url", {});
+  await tg("sendMessage", {
+    chat_id: chatId,
+    text:
+      `🎞 <b>Reels webhook (n8n)</b>\n\nHozirgi URL: <code>${current}</code>\n\n` +
+      `n8n dagi <b>Webhook (POST)</b> node ning Production URL ini yuboring.\n` +
+      `O'chirish uchun <code>-</code> yuboring.\n\n` +
+      `Callback maxfiy kaliti:\n<code>${reelsSecret()}</code>`,
+    parse_mode: "HTML",
+    reply_markup: inlineKeyboard([[{ text: "❌ Bekor qilish", callback_data: "adm:cancel" }]]),
+  });
+}
+
+// ---------- REELS (user flow) ----------
+async function startReels(chatId: number, telegramId: number) {
+  const url = await getReelsWebhookUrl();
+  if (!url) {
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: "⚠️ Reels xizmati hozircha sozlanmagan. Keyinroq urinib ko'ring.",
+    });
+    return;
+  }
+  await setSession(telegramId, "reels:link", {});
+  await tg("sendMessage", {
+    chat_id: chatId,
+    text:
+      "🎞 <b>Instagram Reels yasash</b>\n\n" +
+      "UzMovie, Asil Media yoki YouTube havolasini yuboring.\n" +
+      "AI videodan eng qiziq lavhalarni topib, 9:16 formatda qisqa video tayyorlaydi.\n\n" +
+      "⏳ Odatda 2–5 daqiqa vaqt oladi.",
+    parse_mode: "HTML",
+    reply_markup: inlineKeyboard([[{ text: "❌ Bekor qilish", callback_data: "reels_cancel" }]]),
+  });
+}
+
+async function handleReelsLink(chatId: number, telegramId: number, text: string): Promise<boolean> {
+  if (!/^https?:\/\/\S+$/i.test(text)) {
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: "❌ Bu havolaga o'xshamaydi. To'liq havola yuboring (https:// bilan).",
+    });
+    return true;
+  }
+  await clearSession(telegramId);
+  const res = await requestReels({ telegramId, chatId, url: text });
+  if (res.ok) {
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: "✅ Qabul qilindi!\n\n⏳ Video tayyor bo'lgach shu yerga yuboriladi (2–5 daqiqa).",
+    });
+  } else if (res.reason === "no_url") {
+    await tg("sendMessage", { chat_id: chatId, text: "⚠️ Reels xizmati sozlanmagan." });
+  } else {
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: `❌ So'rov yuborilmadi. Keyinroq urinib ko'ring.\n<code>${res.message ?? ""}</code>`,
+      parse_mode: "HTML",
+    });
+  }
+  return true;
+}
+
 async function runBroadcast(fromTgId: number, msg: TgMessage) {
   const { data: users } = await db().from("users").select("telegram_id").eq("is_blocked", false);
   const total = users?.length ?? 0;
