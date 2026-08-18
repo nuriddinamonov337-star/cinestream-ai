@@ -1,6 +1,7 @@
 import { tg, tgSafe, inlineKeyboard, removeKeyboard } from "./api";
 import { db, getSetting, setSetting, getAdminIds, isAdmin, getSession, setSession, clearSession } from "./db";
 import { notifyMovieCreated, setN8nWebhookUrl, getN8nWebhookUrl } from "./webhook-n8n";
+import { requestReels, getReelsWebhookUrl, setReelsWebhookUrl, reelsSecret } from "./reels";
 
 
 type TgUser = { id: number; username?: string; first_name?: string; last_name?: string; language_code?: string };
