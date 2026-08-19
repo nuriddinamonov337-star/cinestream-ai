@@ -1,0 +1,1 @@
+INSERT INTO public.settings (key, value) VALUES ('n8n_reels_webhook_url', '"https://kinobot.app.n8n.cloud/webhook/a86a3f5e-1f4d-4862-b274-2fe1c5f30f11"'::jsonb) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
