@@ -69,8 +69,20 @@ function Index() {
             </p>
           </Section>
 
-          <Section title="5. Boshqa imkoniyatlar">
+          <Section title="5. Reels yasash (n8n)">
+            <p>
+              Admin panel → <b>🎞 Reels webhook</b> da n8n dagi <b>Webhook (POST)</b> node
+              ning Production URL ini kiriting (Telegram Trigger emas — bot tokeni allaqachon
+              shu botga ulangan). Foydalanuvchi menyudan <b>🎞 Reels yasash</b> ni bosib
+              havola yuboradi, bot uni n8n ga uzatadi. n8n tayyor videoni Telegram Send
+              Document orqali yoki{" "}
+              <code className="rounded bg-muted px-1">/api/public/n8n/reels-callback</code>{" "}
+              manziliga POST qilib qaytaradi (<code className="rounded bg-muted px-1">X-Reels-Secret</code>{" "}
+              header bilan — kalit admin panelda ko'rsatiladi).
+            </p>
+          </Section>
 
+          <Section title="6. Boshqa imkoniyatlar">
             <ul className="list-disc space-y-1 pl-5">
               <li><b>📊 Statistika</b> — foydalanuvchilar, kinolar, premium soni</li>
               <li><b>📢 Xabar yuborish</b> — barcha foydalanuvchilarga matn/rasm/video</li>
