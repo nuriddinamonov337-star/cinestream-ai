@@ -1,7 +1,6 @@
 import { tg, tgSafe, inlineKeyboard, removeKeyboard } from "./api";
 import { db, getSetting, setSetting, getAdminIds, isAdmin, getSession, setSession, clearSession } from "./db";
 import { notifyMovieCreated, setN8nWebhookUrl, getN8nWebhookUrl } from "./webhook-n8n";
-import { requestReels, getReelsWebhookUrl, setReelsWebhookUrl, reelsSecret } from "./reels";
 
 
 type TgUser = { id: number; username?: string; first_name?: string; last_name?: string; language_code?: string };
@@ -79,7 +78,6 @@ function subscribeMessage(missing: any[]) {
 async function sendMainMenu(chatId: number, isAdminUser: boolean) {
   const keyboard: any[][] = [
     [{ text: "🎬 Kino kodini kiriting", callback_data: "how_to" }],
-    [{ text: "🎞 Reels yasash", callback_data: "reels_start" }],
     [{ text: "⭐ Premium", callback_data: "premium_menu" }, { text: "📊 Mening statusim", callback_data: "my_stats" }],
   ];
   if (isAdminUser) keyboard.push([{ text: "🛠 Admin panel", callback_data: "admin_menu" }]);
@@ -372,7 +370,6 @@ async function sendAdminMenu(chatId: number) {
       [{ text: "📺 Kanal qo'shish", callback_data: "adm:add_channel" }, { text: "❌ Kanal o'chirish", callback_data: "adm:del_channel" }],
       [{ text: "📊 Statistika", callback_data: "adm:stats" }, { text: "📢 Xabar yuborish", callback_data: "adm:broadcast" }],
       [{ text: "💳 Karta ma'lumoti", callback_data: "adm:card" }, { text: "🔗 n8n webhook", callback_data: "adm:n8n" }],
-      [{ text: "🎞 Reels webhook", callback_data: "adm:reels" }],
     ]),
   });
 }
@@ -483,71 +480,6 @@ async function startN8nEdit(chatId: number, telegramId: number) {
   });
 }
 
-async function startReelsAdminEdit(chatId: number, telegramId: number) {
-  const current = (await getReelsWebhookUrl()) || "—";
-  await setSession(telegramId, "reels:url", {});
-  await tg("sendMessage", {
-    chat_id: chatId,
-    text:
-      `🎞 <b>Reels webhook (n8n)</b>\n\nHozirgi URL: <code>${current}</code>\n\n` +
-      `n8n dagi <b>Webhook (POST)</b> node ning Production URL ini yuboring.\n` +
-      `O'chirish uchun <code>-</code> yuboring.\n\n` +
-      `Callback maxfiy kaliti:\n<code>${reelsSecret()}</code>`,
-    parse_mode: "HTML",
-    reply_markup: inlineKeyboard([[{ text: "❌ Bekor qilish", callback_data: "adm:cancel" }]]),
-  });
-}
-
-// ---------- REELS (user flow) ----------
-async function startReels(chatId: number, telegramId: number) {
-  const url = await getReelsWebhookUrl();
-  if (!url) {
-    await tg("sendMessage", {
-      chat_id: chatId,
-      text: "⚠️ Reels xizmati hozircha sozlanmagan. Keyinroq urinib ko'ring.",
-    });
-    return;
-  }
-  await setSession(telegramId, "reels:link", {});
-  await tg("sendMessage", {
-    chat_id: chatId,
-    text:
-      "🎞 <b>Instagram Reels yasash</b>\n\n" +
-      "UzMovie, Asil Media yoki YouTube havolasini yuboring.\n" +
-      "AI videodan eng qiziq lavhalarni topib, 9:16 formatda qisqa video tayyorlaydi.\n\n" +
-      "⏳ Odatda 2–5 daqiqa vaqt oladi.",
-    parse_mode: "HTML",
-    reply_markup: inlineKeyboard([[{ text: "❌ Bekor qilish", callback_data: "reels_cancel" }]]),
-  });
-}
-
-async function handleReelsLink(chatId: number, telegramId: number, text: string): Promise<boolean> {
-  if (!/^https?:\/\/\S+$/i.test(text)) {
-    await tg("sendMessage", {
-      chat_id: chatId,
-      text: "❌ Bu havolaga o'xshamaydi. To'liq havola yuboring (https:// bilan).",
-    });
-    return true;
-  }
-  await clearSession(telegramId);
-  const res = await requestReels({ telegramId, chatId, url: text });
-  if (res.ok) {
-    await tg("sendMessage", {
-      chat_id: chatId,
-      text: "✅ Qabul qilindi!\n\n⏳ Video tayyor bo'lgach shu yerga yuboriladi (2–5 daqiqa).",
-    });
-  } else if (res.reason === "no_url") {
-    await tg("sendMessage", { chat_id: chatId, text: "⚠️ Reels xizmati sozlanmagan." });
-  } else {
-    await tg("sendMessage", {
-      chat_id: chatId,
-      text: `❌ So'rov yuborilmadi. Keyinroq urinib ko'ring.\n<code>${res.message ?? ""}</code>`,
-      parse_mode: "HTML",
-    });
-  }
-  return true;
-}
-
 async function runBroadcast(fromTgId: number, msg: TgMessage) {
   const { data: users } = await db().from("users").select("telegram_id").eq("is_blocked", false);
   const total = users?.length ?? 0;
@@ -614,11 +546,6 @@ async function onMessage(msg: TgMessage) {
     if (await handleReceipt(chatId, tgUser.id, msg)) return;
   }
 
-  // Reels link (any user)
-  if (sess?.state === "reels:link" && text && !text.startsWith("/")) {
-    if (await handleReelsLink(chatId, tgUser.id, text)) return;
-  }
-
   // Commands
   if (text === "/start") {
     await clearSession(tgUser.id);
@@ -635,6 +562,14 @@ async function onMessage(msg: TgMessage) {
       return;
     }
     await sendAdminMenu(chatId);
+    return;
+  }
+  if (text === "/promt") {
+    if (!isAdminUser) {
+      await tg("sendMessage", { chat_id: chatId, text: "\u26d4 Bu buyruq faqat admin uchun." });
+      return;
+    }
+    await sendPromt(chatId);
     return;
   }
   if (text === "/myid") {
@@ -692,11 +627,6 @@ async function onCallback(cb: TgCallback) {
     }
     return;
   }
-  if (data === "reels_start") return startReels(chatId, telegramId);
-  if (data === "reels_cancel") {
-    await clearSession(telegramId);
-    return tg("sendMessage", { chat_id: chatId, text: "Bekor qilindi." });
-  }
   if (data === "premium_menu") return sendPremiumMenu(chatId);
   if (data === "my_stats") return sendStats(chatId, telegramId, user.id);
   if (data === "how_to") {
@@ -727,7 +657,6 @@ async function onCallback(cb: TgCallback) {
   if (data === "adm:broadcast") return startBroadcast(chatId, telegramId);
   if (data === "adm:card") return startCardEdit(chatId, telegramId);
   if (data === "adm:n8n") return startN8nEdit(chatId, telegramId);
-  if (data === "adm:reels") return startReelsAdminEdit(chatId, telegramId);
   if (data.startsWith("adm:delch:")) {
     const id = data.slice("adm:delch:".length);
     await db().from("channels").update({ is_active: false }).eq("id", id);
@@ -887,26 +816,61 @@ async function handleAdminFSM(chatId: number, telegramId: number, msg: TgMessage
     return true;
   }
 
-  if (state === "reels:url") {
-    if (!text) { await tg("sendMessage", { chat_id: chatId, text: "URL yuboring yoki o'chirish uchun -" }); return true; }
-    if (text === "-") {
-      await setReelsWebhookUrl("");
-      await clearSession(telegramId);
-      await tg("sendMessage", { chat_id: chatId, text: "🗑 Reels webhook URL o'chirildi." });
-      return true;
-    }
-    if (!/^https?:\/\//i.test(text)) {
-      await tg("sendMessage", { chat_id: chatId, text: "❌ URL http:// yoki https:// bilan boshlanishi kerak." });
-      return true;
-    }
-    await setReelsWebhookUrl(text);
-    await clearSession(telegramId);
-    await tg("sendMessage", {
-      chat_id: chatId, parse_mode: "HTML",
-      text: `✅ Reels webhook saqlandi:\n<code>${text}</code>\n\nEndi foydalanuvchi havola yuborsa, u shu URL ga POST qilinadi.`,
-    });
-    return true;
-  }
-
   return false;
+}
+
+// ---------- /promt : bot tuzilishi haqida to'liq tushuntirish ----------
+const PROMT_TEXT = `🤖 <b>Bot qanday ishlaydi — to'liq tushuntirish</b>
+
+<b>1. Umumiy tuzilma</b>
+• Telegram → Webhook (<code>/api/public/telegram/webhook</code>) → bot mantiqi → Lovable Cloud (baza).
+• Telegram API chaqiruvlari Lovable connector gateway orqali ketadi (token kodda saqlanmaydi).
+
+<b>2. Baza jadvallari</b>
+• <code>users</code> — foydalanuvchi, premium muddati, bloklangan holati
+• <code>channels</code> — majburiy obuna kanallari
+• <code>movies</code> — kino nomi, kodi, file_id, premium belgisi
+• <code>payments</code> — chek rasmi, holati (pending/approved/rejected)
+• <code>settings</code> — karta ma'lumoti, admin ro'yxati, sozlamalar
+• <code>admin_sessions</code> — ko'p bosqichli dialoglar holati (FSM)
+
+<b>3. Foydalanuvchi oqimi</b>
+1) <code>/start</code> → bot foydalanuvchini bazaga yozadi.
+2) Majburiy kanallarga obuna tekshiriladi (<code>getChatMember</code>).
+3) Obuna bo'lmasa — kanallar ro'yxati + "Tekshirish" tugmasi chiqadi.
+4) Obuna bo'lsa — asosiy menyu ochiladi.
+5) Foydalanuvchi <b>kino kodini</b> (raqam) yuboradi → bot <code>movies</code> dan topib, <code>file_id</code> orqali videoni yuboradi.
+6) Kino premium bo'lsa — faqat premium foydalanuvchiga yuboriladi.
+
+<b>4. Premium</b>
+• ⭐ Premium → tarif tanlanadi → karta ma'lumoti chiqadi.
+• Foydalanuvchi chek rasmini yuboradi → chek adminga tugmalar bilan boradi.
+• Admin ✅ tasdiqlasa — <code>users.premium_until</code> uzaytiriladi; ❌ rad etsa — foydalanuvchiga xabar boradi.
+• <code>/stats</code> — foydalanuvchi o'z premium holati va muddatini ko'radi.
+
+<b>5. Admin panel (<code>/admin</code>)</b>
+• 🎬 Kino qo'shish: nomi → kodi → video fayl
+• 🗑 Kino o'chirish (kod bo'yicha)
+• 📺 Kanal qo'shish / ❌ Kanal o'chirish
+• 📊 Statistika: foydalanuvchi, kino, premium soni
+• 📢 Xabar yuborish: hammaga matn/rasm/video
+• 💳 Karta ma'lumoti
+• 🔗 n8n webhook: yangi kino qo'shilganda tashqi tizimga POST yuboriladi (<code>webhook_logs</code> ga log yoziladi)
+
+<b>6. Buyruqlar</b>
+<code>/start</code> — boshlash
+<code>/stats</code> — o'z holatingiz
+<code>/myid</code> — Telegram ID
+<code>/admin</code> — admin panel (faqat admin)
+<code>/promt</code> — shu tushuntirish (faqat admin)
+
+<b>7. Xavfsizlik</b>
+• Admin huquqi faqat egasining Telegram ID si orqali beriladi.
+• Baza RLS bilan yopiq, server kaliti faqat serverda ishlatiladi.`;
+
+async function sendPromt(chatId: number) {
+  const parts = PROMT_TEXT.match(/[\s\S]{1,3500}/g) || [];
+  for (const part of parts) {
+    await tg("sendMessage", { chat_id: chatId, text: part, parse_mode: "HTML", disable_web_page_preview: true });
+  }
 }
