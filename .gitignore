@@ -16,6 +16,14 @@ dist-ssr
 .nitro
 *.local
 
+# npm lockfile is regenerated inside the Docker build; the repo tracks bun.lock instead.
+package-lock.json
+
+# Secrets — never commit environment files
+.env
+.env.*
+!.env.example
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars
@@ -30,3 +38,4 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.agents_tmp/

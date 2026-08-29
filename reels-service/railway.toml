@@ -1,0 +1,9 @@
+[deploy]
+# Reels Python microservice — deploy as a separate Railway service.
+startCommand = "sh -c 'uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+
+[[services]]
+name = "reels-service"
+source = "."

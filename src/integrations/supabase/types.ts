@@ -103,40 +103,58 @@ export type Database = {
           caption: string | null
           code: string
           created_at: string
+          description: string | null
           file_id: string
           file_type: string
+          genre: string | null
           id: string
           is_premium: boolean
+          language: string | null
+          poster_url: string | null
+          rating: number | null
           source_chat_id: number | null
           source_message_id: number | null
           title: string
           views_count: number
+          year: number | null
         }
         Insert: {
           caption?: string | null
           code: string
           created_at?: string
+          description?: string | null
           file_id: string
           file_type?: string
+          genre?: string | null
           id?: string
           is_premium?: boolean
+          language?: string | null
+          poster_url?: string | null
+          rating?: number | null
           source_chat_id?: number | null
           source_message_id?: number | null
           title: string
           views_count?: number
+          year?: number | null
         }
         Update: {
           caption?: string | null
           code?: string
           created_at?: string
+          description?: string | null
           file_id?: string
           file_type?: string
+          genre?: string | null
           id?: string
           is_premium?: boolean
+          language?: string | null
+          poster_url?: string | null
+          rating?: number | null
           source_chat_id?: number | null
           source_message_id?: number | null
           title?: string
           views_count?: number
+          year?: number | null
         }
         Relationships: []
       }

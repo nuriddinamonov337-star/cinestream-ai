@@ -10,11 +10,23 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiPublicReelsCallbackRouteImport } from './routes/api/public/reels/callback'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHealthRoute = ApiHealthRouteImport.update({
+  id: '/api/health',
+  path: '/api/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicReelsCallbackRoute = ApiPublicReelsCallbackRouteImport.update({
+  id: '/api/public/reels/callback',
+  path: '/api/public/reels/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicTelegramWebhookRoute =
@@ -26,27 +38,48 @@ const ApiPublicTelegramWebhookRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/health': typeof ApiHealthRoute
+  '/api/public/reels/callback': typeof ApiPublicReelsCallbackRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/health': typeof ApiHealthRoute
+  '/api/public/reels/callback': typeof ApiPublicReelsCallbackRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/health': typeof ApiHealthRoute
+  '/api/public/reels/callback': typeof ApiPublicReelsCallbackRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/public/telegram/webhook'
+  fullPaths:
+    | '/'
+    | '/api/health'
+    | '/api/public/reels/callback'
+    | '/api/public/telegram/webhook'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/public/telegram/webhook'
-  id: '__root__' | '/' | '/api/public/telegram/webhook'
+  to:
+    | '/'
+    | '/api/health'
+    | '/api/public/reels/callback'
+    | '/api/public/telegram/webhook'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/health'
+    | '/api/public/reels/callback'
+    | '/api/public/telegram/webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiHealthRoute: typeof ApiHealthRoute
+  ApiPublicReelsCallbackRoute: typeof ApiPublicReelsCallbackRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
 }
 
@@ -57,6 +90,20 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/health': {
+      id: '/api/health'
+      path: '/api/health'
+      fullPath: '/api/health'
+      preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/reels/callback': {
+      id: '/api/public/reels/callback'
+      path: '/api/public/reels/callback'
+      fullPath: '/api/public/reels/callback'
+      preLoaderRoute: typeof ApiPublicReelsCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/telegram/webhook': {
@@ -71,6 +118,8 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiHealthRoute: ApiHealthRoute,
+  ApiPublicReelsCallbackRoute: ApiPublicReelsCallbackRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
 }
 export const routeTree = rootRouteImport

@@ -24,7 +24,7 @@ export async function setSetting(key: string, value: any) {
   await db().from("settings").upsert({ key, value }, { onConflict: "key" });
 }
 
-export const OWNER_TELEGRAM_ID = 5583787103;
+export const OWNER_TELEGRAM_ID = Number(process.env.ADMIN_ID ?? process.env.OWNER_TELEGRAM_ID ?? 5583787103);
 
 export async function getAdminIds(): Promise<number[]> {
   const ids = await getSetting<number[]>("admin_telegram_ids", []);

@@ -12,4 +12,7 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Deploy target: Railway (Node). Nitro defaults to a Cloudflare preset which won't run on
+  // Railway; force the node-server preset so the build emits a standalone Node server.
+  nitro: { preset: "node-server" },
 });

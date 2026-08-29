@@ -1,5 +1,5 @@
 import { db, getSetting } from "./db";
-import { tg } from "./api";
+import { tg, getBotToken } from "./api";
 
 const SETTING_KEY = "n8n_webhook_url";
 
@@ -40,8 +40,7 @@ async function log(entry: {
 // Note: Telegram file URLs expire (~1 hour). n8n should re-fetch via getFile when needed.
 async function resolveTelegramFileUrl(fileId: string): Promise<string | null> {
   try {
-    const token = process.env.TELEGRAM_API_KEY || process.env.TELEGRAM_BOT_TOKEN;
-    if (!token) return null;
+    const token = getBotToken();
     const info: any = await tg("getFile", { file_id: fileId });
     if (info?.file_path) {
       return `https://api.telegram.org/file/bot${token}/${info.file_path}`;

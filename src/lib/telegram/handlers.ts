@@ -1,9 +1,25 @@
 import { tg, tgSafe, inlineKeyboard, removeKeyboard } from "./api";
-import { db, getSetting, setSetting, getAdminIds, isAdmin, getSession, setSession, clearSession } from "./db";
+import {
+  db,
+  getSetting,
+  setSetting,
+  getAdminIds,
+  isAdmin,
+  getSession,
+  setSession,
+  clearSession,
+} from "./db";
 import { notifyMovieCreated, setN8nWebhookUrl, getN8nWebhookUrl } from "./webhook-n8n";
+import { setupWebhook, getWebhookInfo } from "./webhook-setup";
+import { requestReels, getReelsWebhookUrl, setReelsWebhookUrl } from "./reels";
 
-
-type TgUser = { id: number; username?: string; first_name?: string; last_name?: string; language_code?: string };
+type TgUser = {
+  id: number;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
+  language_code?: string;
+};
 type TgMessage = {
   message_id: number;
   from?: TgUser;
@@ -16,7 +32,12 @@ type TgMessage = {
   reply_to_message?: TgMessage;
 };
 type TgCallback = { id: string; from: TgUser; message?: TgMessage; data?: string };
-type TgUpdate = { update_id: number; message?: TgMessage; edited_message?: TgMessage; callback_query?: TgCallback };
+type TgUpdate = {
+  update_id: number;
+  message?: TgMessage;
+  edited_message?: TgMessage;
+  callback_query?: TgCallback;
+};
 
 // ---------- USER upsert ----------
 async function upsertUser(u: TgUser) {
@@ -31,7 +52,7 @@ async function upsertUser(u: TgUser) {
         language_code: u.language_code ?? null,
         last_seen_at: new Date().toISOString(),
       },
-      { onConflict: "telegram_id" }
+      { onConflict: "telegram_id" },
     )
     .select("*")
     .single();
@@ -40,7 +61,11 @@ async function upsertUser(u: TgUser) {
 
 // ---------- Subscription check ----------
 async function getRequiredChannels() {
-  const { data } = await db().from("channels").select("*").eq("is_active", true).order("created_at");
+  const { data } = await db()
+    .from("channels")
+    .select("*")
+    .eq("is_active", true)
+    .order("created_at");
   return data ?? [];
 }
 
@@ -49,7 +74,10 @@ async function checkSubscriptions(telegramUserId: number) {
   const missing: typeof channels = [];
   for (const ch of channels) {
     try {
-      const res: any = await tg("getChatMember", { chat_id: Number(ch.chat_id), user_id: telegramUserId });
+      const res: any = await tg("getChatMember", {
+        chat_id: Number(ch.chat_id),
+        user_id: telegramUserId,
+      });
       const status = res?.status;
       if (!["member", "administrator", "creator"].includes(status)) missing.push(ch);
     } catch (e) {
@@ -64,7 +92,9 @@ async function checkSubscriptions(telegramUserId: number) {
 function subscribeMessage(missing: any[]) {
   const rows: import("./api").InlineButton[][] = [];
   for (const ch of missing) {
-    const link = ch.invite_link || (ch.username ? `https://t.me/${String(ch.username).replace("@", "")}` : null);
+    const link =
+      ch.invite_link ||
+      (ch.username ? `https://t.me/${String(ch.username).replace("@", "")}` : null);
     if (link) rows.push([{ text: `📢 ${ch.title}`, url: link }]);
   }
   rows.push([{ text: "✅ Tekshirish", callback_data: "check_subs" }]);
@@ -78,7 +108,11 @@ function subscribeMessage(missing: any[]) {
 async function sendMainMenu(chatId: number, isAdminUser: boolean) {
   const keyboard: any[][] = [
     [{ text: "🎬 Kino kodini kiriting", callback_data: "how_to" }],
-    [{ text: "⭐ Premium", callback_data: "premium_menu" }, { text: "📊 Mening statusim", callback_data: "my_stats" }],
+    [
+      { text: "⭐ Premium", callback_data: "premium_menu" },
+      { text: "📊 Mening statusim", callback_data: "my_stats" },
+    ],
+    [{ text: "🎞 Reels yasash", callback_data: "reels:menu" }],
   ];
   if (isAdminUser) keyboard.push([{ text: "🛠 Admin panel", callback_data: "admin_menu" }]);
   await tg("sendMessage", {
@@ -103,9 +137,16 @@ async function isUserPremium(userId: string) {
 }
 
 async function sendPremiumMenu(chatId: number) {
-  const { data: plans } = await db().from("premium_plans").select("*").eq("is_active", true).order("sort_order");
+  const { data: plans } = await db()
+    .from("premium_plans")
+    .select("*")
+    .eq("is_active", true)
+    .order("sort_order");
   const rows = (plans ?? []).map((p) => [
-    { text: `${p.title} — ${Number(p.price_uzs).toLocaleString("uz-UZ")} so'm`, callback_data: `buy:${p.key}` },
+    {
+      text: `${p.title} — ${Number(p.price_uzs).toLocaleString("uz-UZ")} so'm`,
+      callback_data: `buy:${p.key}`,
+    },
   ]);
   await tg("sendMessage", {
     chat_id: chatId,
@@ -114,12 +155,18 @@ async function sendPremiumMenu(chatId: number) {
       "Premium olsangiz — barcha maxsus kinolarni ko'ra olasiz.\n\n" +
       "Tarifni tanlang:",
     parse_mode: "HTML",
-    reply_markup: inlineKeyboard(rows.length ? rows : [[{ text: "Tariflar mavjud emas", callback_data: "noop" }]]),
+    reply_markup: inlineKeyboard(
+      rows.length ? rows : [[{ text: "Tariflar mavjud emas", callback_data: "noop" }]],
+    ),
   });
 }
 
 async function startPayment(chatId: number, userId: string, telegramId: number, planKey: string) {
-  const { data: plan } = await db().from("premium_plans").select("*").eq("key", planKey).maybeSingle();
+  const { data: plan } = await db()
+    .from("premium_plans")
+    .select("*")
+    .eq("key", planKey)
+    .maybeSingle();
   if (!plan) return tg("sendMessage", { chat_id: chatId, text: "Tarif topilmadi." });
   const cardNumber = await getSetting<string>("card_number", "8600 0000 0000 0000");
   const cardHolder = await getSetting<string>("card_holder", "ISM FAMILIYA");
@@ -145,10 +192,17 @@ async function handleReceipt(chatId: number, telegramId: number, msg: TgMessage)
   const fileId = msg.photo?.[msg.photo.length - 1]?.file_id || msg.document?.file_id;
   const fileType = msg.photo ? "photo" : msg.document ? "document" : null;
   if (!fileId || !fileType) {
-    await tg("sendMessage", { chat_id: chatId, text: "Iltimos, chekni rasm yoki hujjat sifatida yuboring." });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: "Iltimos, chekni rasm yoki hujjat sifatida yuboring.",
+    });
     return true;
   }
-  const { data: user } = await db().from("users").select("id").eq("telegram_id", telegramId).single();
+  const { data: user } = await db()
+    .from("users")
+    .select("id")
+    .eq("telegram_id", telegramId)
+    .single();
   const { data: pay } = await db()
     .from("payments")
     .insert({
@@ -195,7 +249,9 @@ async function handleReceipt(chatId: number, telegramId: number, msg: TgMessage)
       };
       const res: any = await tg(method, body);
       adminMsgIds.push({ chat_id: adminId, message_id: res.message_id });
-    } catch (e) { console.warn("send to admin failed", e); }
+    } catch (e) {
+      console.warn("send to admin failed", e);
+    }
   }
   await db().from("payments").update({ admin_message_ids: adminMsgIds }).eq("id", pay!.id);
   return true;
@@ -204,12 +260,25 @@ async function handleReceipt(chatId: number, telegramId: number, msg: TgMessage)
 async function decidePayment(callback: TgCallback, paymentId: string, approve: boolean) {
   const adminTgId = callback.from.id;
   if (!(await isAdmin(adminTgId))) {
-    return tg("answerCallbackQuery", { callback_query_id: callback.id, text: "Ruxsat yo'q", show_alert: true });
+    return tg("answerCallbackQuery", {
+      callback_query_id: callback.id,
+      text: "Ruxsat yo'q",
+      show_alert: true,
+    });
   }
-  const { data: pay } = await db().from("payments").select("*, users(telegram_id, id), premium_plans(*)").eq("id", paymentId).single();
-  if (!pay) return tg("answerCallbackQuery", { callback_query_id: callback.id, text: "To'lov topilmadi" });
+  const { data: pay } = await db()
+    .from("payments")
+    .select("*, users(telegram_id, id), premium_plans(*)")
+    .eq("id", paymentId)
+    .single();
+  if (!pay)
+    return tg("answerCallbackQuery", { callback_query_id: callback.id, text: "To'lov topilmadi" });
   if (pay.status !== "pending") {
-    return tg("answerCallbackQuery", { callback_query_id: callback.id, text: `Allaqachon: ${pay.status}`, show_alert: true });
+    return tg("answerCallbackQuery", {
+      callback_query_id: callback.id,
+      text: `Allaqachon: ${pay.status}`,
+      show_alert: true,
+    });
   }
 
   if (approve) {
@@ -221,11 +290,14 @@ async function decidePayment(callback: TgCallback, paymentId: string, approve: b
       expires_at: expiresAt,
       payment_id: pay.id,
     });
-    await db().from("payments").update({
-      status: "approved",
-      decided_by_telegram_id: adminTgId,
-      decided_at: new Date().toISOString(),
-    }).eq("id", paymentId);
+    await db()
+      .from("payments")
+      .update({
+        status: "approved",
+        decided_by_telegram_id: adminTgId,
+        decided_at: new Date().toISOString(),
+      })
+      .eq("id", paymentId);
     const userTgId = (pay.users as any).telegram_id;
     await tgSafe("sendMessage", {
       chat_id: Number(userTgId),
@@ -233,11 +305,14 @@ async function decidePayment(callback: TgCallback, paymentId: string, approve: b
       parse_mode: "HTML",
     });
   } else {
-    await db().from("payments").update({
-      status: "rejected",
-      decided_by_telegram_id: adminTgId,
-      decided_at: new Date().toISOString(),
-    }).eq("id", paymentId);
+    await db()
+      .from("payments")
+      .update({
+        status: "rejected",
+        decided_by_telegram_id: adminTgId,
+        decided_at: new Date().toISOString(),
+      })
+      .eq("id", paymentId);
     const userTgId = (pay.users as any).telegram_id;
     await tgSafe("sendMessage", {
       chat_id: Number(userTgId),
@@ -251,17 +326,26 @@ async function decidePayment(callback: TgCallback, paymentId: string, approve: b
     await tgSafe("editMessageReplyMarkup", {
       chat_id: m.chat_id,
       message_id: m.message_id,
-      reply_markup: inlineKeyboard([[{ text: approve ? "✅ Tasdiqlangan" : "❌ Bekor qilingan", callback_data: "noop" }]]),
+      reply_markup: inlineKeyboard([
+        [{ text: approve ? "✅ Tasdiqlangan" : "❌ Bekor qilingan", callback_data: "noop" }],
+      ]),
     });
   }
-  await tg("answerCallbackQuery", { callback_query_id: callback.id, text: approve ? "Tasdiqlandi" : "Bekor qilindi" });
+  await tg("answerCallbackQuery", {
+    callback_query_id: callback.id,
+    text: approve ? "Tasdiqlandi" : "Bekor qilindi",
+  });
 }
 
 // ---------- Movie code ----------
 async function handleMovieCode(chatId: number, telegramId: number, userId: string, code: string) {
   const { data: movie } = await db().from("movies").select("*").eq("code", code).maybeSingle();
   if (!movie) {
-    await tg("sendMessage", { chat_id: chatId, text: `❓ <b>${code}</b> kodi bo'yicha kino topilmadi.`, parse_mode: "HTML" });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: `❓ <b>${code}</b> kodi bo'yicha kino topilmadi.`,
+      parse_mode: "HTML",
+    });
     return;
   }
   if (movie.is_premium) {
@@ -271,13 +355,22 @@ async function handleMovieCode(chatId: number, telegramId: number, userId: strin
         chat_id: chatId,
         text: `⭐ <b>${movie.title}</b> — bu premium kino.\n\nKo'rish uchun premium sotib oling.`,
         parse_mode: "HTML",
-        reply_markup: inlineKeyboard([[{ text: "⭐ Premium olish", callback_data: "premium_menu" }]]),
+        reply_markup: inlineKeyboard([
+          [{ text: "⭐ Premium olish", callback_data: "premium_menu" }],
+        ]),
       });
       return;
     }
   }
   const bu = (await botUsername()) || "kino";
-  const caption = `🎬 <b>${movie.title}</b>\n\n📺 @${bu}`;
+  const meta: string[] = [];
+  if (movie.year) meta.push(String(movie.year));
+  if (movie.genre) meta.push(movie.genre);
+  if (movie.language) meta.push(movie.language);
+  if (movie.rating != null) meta.push(`⭐ ${movie.rating}`);
+  const metaLine = meta.length ? `\n${meta.join(" • ")}` : "";
+  const descLine = movie.description ? `\n\n${movie.description}` : "";
+  const caption = `🎬 <b>${movie.title}</b>${metaLine}\n\n📺 @${bu}${descLine}`;
   try {
     // Primary: send by file_id (most reliable — works for any file uploaded to the bot)
     const method = movie.file_type === "document" ? "sendDocument" : "sendVideo";
@@ -288,7 +381,10 @@ async function handleMovieCode(chatId: number, telegramId: number, userId: strin
       caption,
       parse_mode: "HTML",
     });
-    await db().from("movies").update({ views_count: (movie.views_count ?? 0) + 1 }).eq("id", movie.id);
+    await db()
+      .from("movies")
+      .update({ views_count: (movie.views_count ?? 0) + 1 })
+      .eq("id", movie.id);
   } catch (e) {
     console.error("sendVideo by file_id failed, trying copyMessage:", e);
     // Fallback: copyMessage from source chat
@@ -301,7 +397,10 @@ async function handleMovieCode(chatId: number, telegramId: number, userId: strin
           caption,
           parse_mode: "HTML",
         });
-        await db().from("movies").update({ views_count: (movie.views_count ?? 0) + 1 }).eq("id", movie.id);
+        await db()
+          .from("movies")
+          .update({ views_count: (movie.views_count ?? 0) + 1 })
+          .eq("id", movie.id);
       } else {
         throw e;
       }
@@ -322,7 +421,9 @@ async function botUsername(): Promise<string | null> {
     const me: any = await tg("getMe");
     _botUsername = me?.username ?? null;
     return _botUsername;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 // ---------- /stats ----------
@@ -366,24 +467,53 @@ async function sendAdminMenu(chatId: number) {
     text: "🛠 <b>Admin panel</b>",
     parse_mode: "HTML",
     reply_markup: inlineKeyboard([
-      [{ text: "🎬 Kino qo'shish", callback_data: "adm:add_movie" }, { text: "🗑 Kino o'chirish", callback_data: "adm:del_movie" }],
-      [{ text: "📺 Kanal qo'shish", callback_data: "adm:add_channel" }, { text: "❌ Kanal o'chirish", callback_data: "adm:del_channel" }],
-      [{ text: "📊 Statistika", callback_data: "adm:stats" }, { text: "📢 Xabar yuborish", callback_data: "adm:broadcast" }],
-      [{ text: "💳 Karta ma'lumoti", callback_data: "adm:card" }, { text: "🔗 n8n webhook", callback_data: "adm:n8n" }],
+      [
+        { text: "🎬 Kino qo'shish", callback_data: "adm:add_movie" },
+        { text: "🗑 Kino o'chirish", callback_data: "adm:del_movie" },
+      ],
+      [
+        { text: "📺 Kanal qo'shish", callback_data: "adm:add_channel" },
+        { text: "❌ Kanal o'chirish", callback_data: "adm:del_channel" },
+      ],
+      [
+        { text: "📊 Statistika", callback_data: "adm:stats" },
+        { text: "📢 Xabar yuborish", callback_data: "adm:broadcast" },
+      ],
+      [
+        { text: "💳 Karta ma'lumoti", callback_data: "adm:card" },
+        { text: "🔗 n8n webhook", callback_data: "adm:n8n" },
+      ],
+      [{ text: "🎞 Reels service URL", callback_data: "adm:reels" }],
     ]),
   });
 }
 
 async function adminStats(chatId: number) {
-  const [{ count: usersCount }, { count: moviesCount }, { count: channelsCount }, { count: pendingPay }, { count: activePremium }] = await Promise.all([
+  const [
+    { count: usersCount },
+    { count: moviesCount },
+    { count: channelsCount },
+    { count: pendingPay },
+    { count: activePremium },
+  ] = await Promise.all([
     db().from("users").select("*", { count: "exact", head: true }),
     db().from("movies").select("*", { count: "exact", head: true }),
     db().from("channels").select("*", { count: "exact", head: true }).eq("is_active", true),
     db().from("payments").select("*", { count: "exact", head: true }).eq("status", "pending"),
-    db().from("premium_subscriptions").select("*", { count: "exact", head: true }).gt("expires_at", new Date().toISOString()),
+    db()
+      .from("premium_subscriptions")
+      .select("*", { count: "exact", head: true })
+      .gt("expires_at", new Date().toISOString()),
   ]);
-  const { data: topMovies } = await db().from("movies").select("code, title, views_count").order("views_count", { ascending: false }).limit(5);
-  const top = (topMovies ?? []).map((m, i) => `${i + 1}. <b>${m.code}</b> — ${m.title} (${m.views_count} marta)`).join("\n") || "—";
+  const { data: topMovies } = await db()
+    .from("movies")
+    .select("code, title, views_count")
+    .order("views_count", { ascending: false })
+    .limit(5);
+  const top =
+    (topMovies ?? [])
+      .map((m, i) => `${i + 1}. <b>${m.code}</b> — ${m.title} (${m.views_count} marta)`)
+      .join("\n") || "—";
   await tg("sendMessage", {
     chat_id: chatId,
     text:
@@ -402,7 +532,7 @@ async function startAddMovie(chatId: number, telegramId: number) {
   await setSession(telegramId, "add_movie:title", {});
   await tg("sendMessage", {
     chat_id: chatId,
-    text: "🎬 <b>Yangi kino</b>\n\n1/3. Kino <b>nomini</b> yuboring:",
+    text: "🎬 <b>Yangi kino</b>\n\n1. Kino <b>nomini</b> yuboring:",
     parse_mode: "HTML",
     reply_markup: inlineKeyboard([[{ text: "❌ Bekor qilish", callback_data: "adm:cancel" }]]),
   });
@@ -416,6 +546,61 @@ async function startDelMovie(chatId: number, telegramId: number) {
     parse_mode: "HTML",
     reply_markup: inlineKeyboard([[{ text: "❌ Bekor qilish", callback_data: "adm:cancel" }]]),
   });
+}
+
+// Insert the movie drafted in the add_movie FSM, then clear session and notify n8n.
+async function confirmAddMovie(chatId: number, telegramId: number) {
+  const sess = await getSession(telegramId);
+  if (!sess || sess.state !== "add_movie:confirm") return;
+  const p = (sess.payload || {}) as any;
+  if (!p.code || !p.title || !p.file_id) {
+    await clearSession(telegramId);
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: "❌ Eski sessiya topilmadi. Qaytadan urinib ko'ring.",
+    });
+    return;
+  }
+  const { data: inserted } = await db()
+    .from("movies")
+    .insert({
+      code: p.code,
+      title: p.title,
+      file_id: p.file_id,
+      file_type: p.file_type,
+      source_chat_id: p.source_chat_id,
+      source_message_id: p.source_message_id,
+      caption: p.caption ?? null,
+      poster_url: p.poster_url ?? null,
+      year: p.year ?? null,
+      genre: p.genre ?? null,
+      rating: p.rating ?? null,
+      description: p.description ?? null,
+      language: p.language ?? null,
+    })
+    .select("*")
+    .single();
+  await clearSession(telegramId);
+  await tg("sendMessage", {
+    chat_id: chatId,
+    parse_mode: "HTML",
+    text: `✅ Kino qo'shildi!\n\n🎬 ${p.title}\n🔢 Kod: <code>${p.code}</code>`,
+  });
+  // Fire-and-await n8n webhook (best effort, errors are logged)
+  try {
+    await notifyMovieCreated({
+      id: inserted?.id,
+      code: p.code,
+      title: p.title,
+      caption: p.caption ?? null,
+      file_id: p.file_id,
+      file_type: p.file_type,
+      is_premium: false,
+      created_at: inserted?.created_at,
+    });
+  } catch (e) {
+    console.error("[n8n] notifyMovieCreated threw", e);
+  }
 }
 
 async function startAddChannel(chatId: number, telegramId: number) {
@@ -432,7 +617,11 @@ async function startAddChannel(chatId: number, telegramId: number) {
 }
 
 async function listChannelsForDelete(chatId: number) {
-  const { data: chans } = await db().from("channels").select("*").eq("is_active", true).order("created_at");
+  const { data: chans } = await db()
+    .from("channels")
+    .select("*")
+    .eq("is_active", true)
+    .order("created_at");
   if (!chans || chans.length === 0) {
     return tg("sendMessage", { chat_id: chatId, text: "Faol kanallar yo'q." });
   }
@@ -480,12 +669,30 @@ async function startN8nEdit(chatId: number, telegramId: number) {
   });
 }
 
+async function startReelsUrlEdit(chatId: number, telegramId: number) {
+  const current = (await getReelsWebhookUrl()) || "—";
+  await setSession(telegramId, "reels_url:input", {});
+  await tg("sendMessage", {
+    chat_id: chatId,
+    text:
+      `🎞 <b>Reels service URL</b>\n\nHozirgi URL: <code>${current}</code>\n\n` +
+      `Yangi Reels Python service manzilini yuboring (https:// bilan boshlansin).\n` +
+      `O'chirish uchun <code>-</code> yuboring.`,
+    parse_mode: "HTML",
+    reply_markup: inlineKeyboard([[{ text: "❌ Bekor qilish", callback_data: "adm:cancel" }]]),
+  });
+}
+
 async function runBroadcast(fromTgId: number, msg: TgMessage) {
   const { data: users } = await db().from("users").select("telegram_id").eq("is_blocked", false);
   const total = users?.length ?? 0;
-  await tg("sendMessage", { chat_id: fromTgId, text: `📤 Yuborish boshlandi... (${total} ta foydalanuvchi)` });
+  await tg("sendMessage", {
+    chat_id: fromTgId,
+    text: `📤 Yuborish boshlandi... (${total} ta foydalanuvchi)`,
+  });
 
-  let sent = 0, failed = 0;
+  let sent = 0,
+    failed = 0;
   const text = msg.text || msg.caption || "";
   const photo = msg.photo?.[msg.photo.length - 1]?.file_id;
   const video = msg.video?.file_id;
@@ -493,9 +700,19 @@ async function runBroadcast(fromTgId: number, msg: TgMessage) {
   for (const u of users ?? []) {
     try {
       if (photo) {
-        await tg("sendPhoto", { chat_id: Number(u.telegram_id), photo, caption: text, parse_mode: "HTML" });
+        await tg("sendPhoto", {
+          chat_id: Number(u.telegram_id),
+          photo,
+          caption: text,
+          parse_mode: "HTML",
+        });
       } else if (video) {
-        await tg("sendVideo", { chat_id: Number(u.telegram_id), video, caption: text, parse_mode: "HTML" });
+        await tg("sendVideo", {
+          chat_id: Number(u.telegram_id),
+          video,
+          caption: text,
+          parse_mode: "HTML",
+        });
       } else if (text) {
         await tg("sendMessage", { chat_id: Number(u.telegram_id), text, parse_mode: "HTML" });
       }
@@ -510,11 +727,21 @@ async function runBroadcast(fromTgId: number, msg: TgMessage) {
     // small pause every 25 to respect rate limits
     if ((sent + failed) % 25 === 0) await new Promise((r) => setTimeout(r, 1000));
   }
-  await db().from("broadcasts").insert({
-    text, media_file_id: photo || video || null, media_file_type: photo ? "photo" : video ? "video" : null,
-    sent_count: sent, failed_count: failed, created_by_telegram_id: fromTgId,
+  await db()
+    .from("broadcasts")
+    .insert({
+      text,
+      media_file_id: photo || video || null,
+      media_file_type: photo ? "photo" : video ? "video" : null,
+      sent_count: sent,
+      failed_count: failed,
+      created_by_telegram_id: fromTgId,
+    });
+  await tg("sendMessage", {
+    chat_id: fromTgId,
+    text: `✅ Yuborish tugadi.\n\n📬 Yetkazildi: <b>${sent}</b>\n❌ Xato: <b>${failed}</b>`,
+    parse_mode: "HTML",
   });
-  await tg("sendMessage", { chat_id: fromTgId, text: `✅ Yuborish tugadi.\n\n📬 Yetkazildi: <b>${sent}</b>\n❌ Xato: <b>${failed}</b>`, parse_mode: "HTML" });
 }
 
 // ---------- MAIN UPDATE ROUTER ----------
@@ -544,6 +771,28 @@ async function onMessage(msg: TgMessage) {
   // Awaiting receipt (any user)
   if (sess?.state === "awaiting_receipt") {
     if (await handleReceipt(chatId, tgUser.id, msg)) return;
+  }
+
+  // Reels link (any user — the Reels button is in the public main menu)
+  if (sess?.state === "reels:link") {
+    const linkText = (msg.text || "").trim();
+    if (!linkText || !/^https?:\/\//i.test(linkText)) {
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: "Iltimos, to'g'ri havola yuboring (http/https).",
+      });
+      return;
+    }
+    await clearSession(tgUser.id);
+    await tg("sendMessage", { chat_id: chatId, text: "⏳ Reels tayyorlanmoqda, biroz kuting..." });
+    const res = await requestReels({ chat_id: chatId, telegram_id: tgUser.id, url: linkText });
+    if (!res.ok) {
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: `❌ Reels so'rovida xatolik: ${res.error}`,
+      });
+    }
+    return;
   }
 
   // Commands
@@ -581,7 +830,48 @@ async function onMessage(msg: TgMessage) {
     return;
   }
   if (text === "/myid") {
-    await tg("sendMessage", { chat_id: chatId, text: `Sizning Telegram ID: <code>${tgUser.id}</code>`, parse_mode: "HTML" });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: `Sizning Telegram ID: <code>${tgUser.id}</code>`,
+      parse_mode: "HTML",
+    });
+    return;
+  }
+  if (text === "/setwebhook") {
+    if (!isAdminUser) {
+      await tg("sendMessage", { chat_id: chatId, text: "\u26d4 Bu buyruq faqat admin uchun." });
+      return;
+    }
+    try {
+      const res: any = await setupWebhook();
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: `✅ Webhook o'rnatildi.\nURL: <code>${res?.url ?? "?"}</code>\nPending updates: ${res?.pending_update_count ?? 0}`,
+        parse_mode: "HTML",
+      });
+    } catch (e) {
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: `❌ Webhook sozlashda xato: ${(e as Error).message}`,
+      });
+    }
+    return;
+  }
+  if (text === "/webhookinfo") {
+    if (!isAdminUser) {
+      await tg("sendMessage", { chat_id: chatId, text: "\u26d4 Bu buyruq faqat admin uchun." });
+      return;
+    }
+    try {
+      const info: any = await getWebhookInfo();
+      await tg("sendMessage", {
+        chat_id: chatId,
+        parse_mode: "HTML",
+        text: `🔗 <b>Webhook info</b>\nURL: <code>${info?.url ?? "—"}</code>\nHas custom cert: ${info?.has_custom_certificate}\nPending: ${info?.pending_update_count ?? 0}\nMax connections: ${info?.max_connections ?? "—"}\nLast error: ${info?.last_error_message ?? "—"}`,
+      });
+    } catch (e) {
+      await tg("sendMessage", { chat_id: chatId, text: `❌ ${(e as Error).message}` });
+    }
     return;
   }
 
@@ -603,7 +893,12 @@ async function onMessage(msg: TgMessage) {
   await sendMainMenu(chatId, isAdminUser);
 }
 
-async function sendStartFlow(chatId: number, telegramId: number, userId: string, isAdminUser: boolean) {
+async function sendStartFlow(
+  chatId: number,
+  telegramId: number,
+  userId: string,
+  isAdminUser: boolean,
+) {
   const { missing } = await checkSubscriptions(telegramId);
   if (missing.length > 0) {
     const m = subscribeMessage(missing);
@@ -628,7 +923,10 @@ async function onCallback(cb: TgCallback) {
   if (data === "check_subs") {
     const { missing } = await checkSubscriptions(telegramId);
     if (missing.length > 0) {
-      await tg("sendMessage", { chat_id: chatId, text: "❌ Hali ham hamma kanallarga obuna bo'lmagansiz." });
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: "❌ Hali ham hamma kanallarga obuna bo'lmagansiz.",
+      });
     } else {
       await tg("sendMessage", { chat_id: chatId, text: "✅ Obuna tasdiqlandi!" });
       await sendMainMenu(chatId, isAdminUser);
@@ -637,8 +935,28 @@ async function onCallback(cb: TgCallback) {
   }
   if (data === "premium_menu") return sendPremiumMenu(chatId);
   if (data === "my_stats") return sendStats(chatId, telegramId, user.id);
+  if (data === "reels:menu") {
+    const serviceUrl = await getReelsWebhookUrl();
+    if (!serviceUrl) {
+      return tg("sendMessage", {
+        chat_id: chatId,
+        text: "🎞 Reels servisi hozircha sozlanmagan. Iltimos, keyinroq urinib ko'ring.",
+      });
+    }
+    await setSession(telegramId, "reels:link", {});
+    return tg("sendMessage", {
+      chat_id: chatId,
+      text: "🎞 <b>Reels yasash</b>\n\nReels uchun manba havolani yuboring (YouTube / TikTok / video URL).",
+      parse_mode: "HTML",
+      reply_markup: inlineKeyboard([[{ text: "❌ Bekor qilish", callback_data: "adm:cancel" }]]),
+    });
+  }
   if (data === "how_to") {
-    return tg("sendMessage", { chat_id: chatId, text: "Kino kodini raqam sifatida yuboring (masalan: <code>245</code>).", parse_mode: "HTML" });
+    return tg("sendMessage", {
+      chat_id: chatId,
+      text: "Kino kodini raqam sifatida yuboring (masalan: <code>245</code>).",
+      parse_mode: "HTML",
+    });
   }
   if (data === "cancel_payment") {
     await clearSession(telegramId);
@@ -665,6 +983,8 @@ async function onCallback(cb: TgCallback) {
   if (data === "adm:broadcast") return startBroadcast(chatId, telegramId);
   if (data === "adm:card") return startCardEdit(chatId, telegramId);
   if (data === "adm:n8n") return startN8nEdit(chatId, telegramId);
+  if (data === "adm:reels") return startReelsUrlEdit(chatId, telegramId);
+  if (data === "adm:movie_confirm") return confirmAddMovie(chatId, telegramId);
   if (data.startsWith("adm:delch:")) {
     const id = data.slice("adm:delch:".length);
     await db().from("channels").update({ is_active: false }).eq("id", id);
@@ -672,72 +992,220 @@ async function onCallback(cb: TgCallback) {
   }
 }
 
-async function handleAdminFSM(chatId: number, telegramId: number, msg: TgMessage, sess: any): Promise<boolean> {
+async function handleAdminFSM(
+  chatId: number,
+  telegramId: number,
+  msg: TgMessage,
+  sess: any,
+): Promise<boolean> {
   const text = (msg.text || "").trim();
   const state = sess.state as string;
   const payload = (sess.payload || {}) as any;
 
   if (state === "add_movie:title") {
-    if (!text) { await tg("sendMessage", { chat_id: chatId, text: "Nom bo'sh bo'lmasin. Kino nomini yuboring." }); return true; }
+    if (!text) {
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: "Nom bo'sh bo'lmasin. Kino nomini yuboring.",
+      });
+      return true;
+    }
     await setSession(telegramId, "add_movie:code", { title: text });
-    await tg("sendMessage", { chat_id: chatId, text: `✔ Nom: <b>${text}</b>\n\n2/3. Endi kino <b>kodini</b> yuboring (masalan 245):`, parse_mode: "HTML" });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: `✔ Nom: <b>${text}</b>\n\n2. Endi kino <b>kodini</b> yuboring (masalan 245):`,
+      parse_mode: "HTML",
+    });
     return true;
   }
   if (state === "add_movie:code") {
-    if (!/^\d{1,10}$/.test(text)) { await tg("sendMessage", { chat_id: chatId, text: "Kod faqat raqamlardan iborat bo'lsin." }); return true; }
-    const { data: existing } = await db().from("movies").select("id").eq("code", text).maybeSingle();
-    if (existing) { await tg("sendMessage", { chat_id: chatId, text: "Bu kod band. Boshqa kod yuboring." }); return true; }
-    await setSession(telegramId, "add_movie:file", { ...payload, code: text });
-    await tg("sendMessage", { chat_id: chatId, text: `✔ Kod: <b>${text}</b>\n\n3/3. Endi kino <b>video faylini</b> shu chatga yuboring.`, parse_mode: "HTML" });
+    if (!/^\d{1,10}$/.test(text)) {
+      await tg("sendMessage", { chat_id: chatId, text: "Kod faqat raqamlardan iborat bo'lsin." });
+      return true;
+    }
+    const { data: existing } = await db()
+      .from("movies")
+      .select("id")
+      .eq("code", text)
+      .maybeSingle();
+    if (existing) {
+      await tg("sendMessage", { chat_id: chatId, text: "Bu kod band. Boshqa kod yuboring." });
+      return true;
+    }
+    await setSession(telegramId, "add_movie:poster", { ...payload, code: text });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      parse_mode: "HTML",
+      text: `✔ Kod: <b>${text}</b>\n\n3. Endi kino <b>posterini</b> rasm sifatida yuboring (majburiy).`,
+    });
+    return true;
+  }
+  if (state === "add_movie:poster") {
+    const posterFileId = msg.photo?.[msg.photo.length - 1]?.file_id;
+    if (!posterFileId) {
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: "Iltimos, posterni rasm (photo) sifatida yuboring.",
+      });
+      return true;
+    }
+    await setSession(telegramId, "add_movie:year", { ...payload, poster_url: posterFileId });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      parse_mode: "HTML",
+      text: "✔ Poster qabul qilindi.\n\n4. Kino <b>yilini</b> yuboring (masalan 2024) yoki o'tkazib o'tish uchun <code>-</code>:",
+    });
+    return true;
+  }
+  if (state === "add_movie:year") {
+    let year: number | null = null;
+    if (text && text !== "-") {
+      const y = Number(text);
+      if (!Number.isFinite(y) || y < 1800 || y > 2100) {
+        await tg("sendMessage", {
+          chat_id: chatId,
+          text: "To'g'ri yil yuboring (masalan 2024) yoki -.",
+        });
+        return true;
+      }
+      year = Math.trunc(y);
+    }
+    await setSession(telegramId, "add_movie:genre", { ...payload, year });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: "5. Kino <b>janrini</b> yuboring (masalan: Drama, Komediya) yoki <code>-</code>:",
+      parse_mode: "HTML",
+    });
+    return true;
+  }
+  if (state === "add_movie:genre") {
+    const genre = text && text !== "-" ? text : null;
+    await setSession(telegramId, "add_movie:rating", { ...payload, genre });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: "6. Kino <b>reytingini</b> yuboring (0.0–10.0, masalan 8.5) yoki <code>-</code>:",
+      parse_mode: "HTML",
+    });
+    return true;
+  }
+  if (state === "add_movie:rating") {
+    let rating: number | null = null;
+    if (text && text !== "-") {
+      const r = Number(text);
+      if (!Number.isFinite(r) || r < 0 || r > 10) {
+        await tg("sendMessage", {
+          chat_id: chatId,
+          text: "Reyting 0 dan 10 gacha (masalan 8.5) yoki -.",
+        });
+        return true;
+      }
+      rating = Math.round(r * 10) / 10;
+    }
+    await setSession(telegramId, "add_movie:description", { ...payload, rating });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: "7. Kino <b>tafsilot/tavsifini</b> yuboring yoki <code>-</code>:",
+      parse_mode: "HTML",
+    });
+    return true;
+  }
+  if (state === "add_movie:description") {
+    const description = text && text !== "-" ? text : null;
+    await setSession(telegramId, "add_movie:language", { ...payload, description });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: "8. Kino <b>tilini</b> yuboring (masalan: O'zbek, Rus) yoki <code>-</code>:",
+      parse_mode: "HTML",
+    });
+    return true;
+  }
+  if (state === "add_movie:language") {
+    const language = text && text !== "-" ? text : null;
+    await setSession(telegramId, "add_movie:file", { ...payload, language });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      parse_mode: "HTML",
+      text: "9. Endi kino <b>video faylini</b> shu chatga yuboring.",
+    });
     return true;
   }
   if (state === "add_movie:file") {
     const fileId = msg.video?.file_id || msg.document?.file_id;
-    if (!fileId) { await tg("sendMessage", { chat_id: chatId, text: "Iltimos, video faylni yuboring." }); return true; }
-    const { data: inserted } = await db().from("movies").insert({
-      code: payload.code,
-      title: payload.title,
+    if (!fileId) {
+      await tg("sendMessage", { chat_id: chatId, text: "Iltimos, video faylni yuboring." });
+      return true;
+    }
+    const draft = {
+      ...payload,
       file_id: fileId,
       file_type: msg.video ? "video" : "document",
       source_chat_id: msg.chat.id,
       source_message_id: msg.message_id,
       caption: msg.caption ?? null,
-    }).select("*").single();
+    };
+    await setSession(telegramId, "add_movie:confirm", draft);
+    const summary = [
+      `🎬 ${payload.title}`,
+      `🔢 Kod: ${payload.code}`,
+      payload.year ? `📅 Yil: ${payload.year}` : null,
+      payload.genre ? `🎭 Janr: ${payload.genre}` : null,
+      payload.rating != null ? `⭐ Reyting: ${payload.rating}` : null,
+      payload.language ? `🌐 Til: ${payload.language}` : null,
+      payload.description ? `📝 ${payload.description}` : null,
+      `🎞 Turi: ${draft.file_type}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    await tg("sendMessage", {
+      chat_id: chatId,
+      parse_mode: "HTML",
+      text: `📦 <b>Tasdiqlang</b>\n\n${summary}\n\nKino bazaga qo'shilsinmi?`,
+      reply_markup: inlineKeyboard([
+        [{ text: "✅ Tasdiqlash va qo'shish", callback_data: "adm:movie_confirm" }],
+        [{ text: "❌ Bekor qilish", callback_data: "adm:cancel" }],
+      ]),
+    });
+    return true;
+  }
+  if (state === "add_movie:confirm") {
+    // Safety: non-callback path; the confirm button handles insertion.
+    return true;
+  }
+
+  if (state === "reels_url:input") {
+    if (!text || !/^https?:\/\//i.test(text)) {
+      await tg("sendMessage", { chat_id: chatId, text: "Iltimos, to'g'ri havola yuboring." });
+      return true;
+    }
+    await setReelsWebhookUrl(text.trim());
     await clearSession(telegramId);
     await tg("sendMessage", {
       chat_id: chatId,
-      text: `✅ Kino qo'shildi!\n\n🎬 ${payload.title}\n🔢 Kod: <code>${payload.code}</code>`,
+      text: `✅ Reels service URL saqlandi:\n<code>${text.trim()}</code>`,
       parse_mode: "HTML",
     });
-    // Fire-and-await n8n webhook (best effort, errors are logged)
-    try {
-      await notifyMovieCreated({
-        id: inserted?.id,
-        code: payload.code,
-        title: payload.title,
-        caption: msg.caption ?? null,
-        file_id: fileId,
-        file_type: msg.video ? "video" : "document",
-        is_premium: false,
-        created_at: inserted?.created_at,
-      });
-    } catch (e) {
-      console.error("[n8n] notifyMovieCreated threw", e);
-    }
     return true;
   }
 
   if (state === "del_movie:code") {
     const { data: m } = await db().from("movies").select("*").eq("code", text).maybeSingle();
-    if (!m) { await tg("sendMessage", { chat_id: chatId, text: "Bunday kod topilmadi." }); await clearSession(telegramId); return true; }
+    if (!m) {
+      await tg("sendMessage", { chat_id: chatId, text: "Bunday kod topilmadi." });
+      await clearSession(telegramId);
+      return true;
+    }
     await db().from("movies").delete().eq("id", m.id);
     await clearSession(telegramId);
-    await tg("sendMessage", { chat_id: chatId, text: `🗑 O'chirildi: <b>${m.title}</b> (kod ${m.code})`, parse_mode: "HTML" });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: `🗑 O'chirildi: <b>${m.title}</b> (kod ${m.code})`,
+      parse_mode: "HTML",
+    });
     return true;
   }
 
   if (state === "add_channel:input") {
-    let chatIdInput = text;
+    const chatIdInput = text;
     let title = text;
     let username: string | null = null;
     let inviteLink: string | null = null;
@@ -762,19 +1230,28 @@ async function handleAdminFSM(chatId: number, telegramId: number, msg: TgMessage
       const me: any = await tg("getMe");
       const member: any = await tg("getChatMember", { chat_id: resolvedId, user_id: me.id });
       if (!["administrator", "creator"].includes(member.status)) {
-        await tg("sendMessage", { chat_id: chatId, text: "⚠️ Bot bu kanalda admin emas. Botni admin qiling va qayta urinib ko'ring." });
+        await tg("sendMessage", {
+          chat_id: chatId,
+          text: "⚠️ Bot bu kanalda admin emas. Botni admin qiling va qayta urinib ko'ring.",
+        });
         return true;
       }
     } catch (e) {
       await tg("sendMessage", { chat_id: chatId, text: `❌ Xato: ${(e as Error).message}` });
       return true;
     }
-    await db().from("channels").upsert(
-      { chat_id: resolvedId, username, title, invite_link: inviteLink, is_active: true },
-      { onConflict: "chat_id" }
-    );
+    await db()
+      .from("channels")
+      .upsert(
+        { chat_id: resolvedId, username, title, invite_link: inviteLink, is_active: true },
+        { onConflict: "chat_id" },
+      );
     await clearSession(telegramId);
-    await tg("sendMessage", { chat_id: chatId, text: `✅ Kanal qo'shildi: <b>${title}</b>`, parse_mode: "HTML" });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: `✅ Kanal qo'shildi: <b>${title}</b>`,
+      parse_mode: "HTML",
+    });
     return true;
   }
 
@@ -786,25 +1263,38 @@ async function handleAdminFSM(chatId: number, telegramId: number, msg: TgMessage
   }
 
   if (state === "card:number") {
-    if (!text) { await tg("sendMessage", { chat_id: chatId, text: "Karta raqamini yuboring." }); return true; }
+    if (!text) {
+      await tg("sendMessage", { chat_id: chatId, text: "Karta raqamini yuboring." });
+      return true;
+    }
     await setSession(telegramId, "card:holder", { ...payload, new_number: text });
-    await tg("sendMessage", { chat_id: chatId, text: "Endi karta egasining ism-familiyasini yuboring:" });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: "Endi karta egasining ism-familiyasini yuboring:",
+    });
     return true;
   }
   if (state === "card:holder") {
-    if (!text) { await tg("sendMessage", { chat_id: chatId, text: "Ism-familiya yuboring." }); return true; }
+    if (!text) {
+      await tg("sendMessage", { chat_id: chatId, text: "Ism-familiya yuboring." });
+      return true;
+    }
     await setSetting("card_number", payload.new_number);
     await setSetting("card_holder", text);
     await clearSession(telegramId);
     await tg("sendMessage", {
-      chat_id: chatId, parse_mode: "HTML",
+      chat_id: chatId,
+      parse_mode: "HTML",
       text: `✅ Karta ma'lumoti yangilandi:\n\n💳 <code>${payload.new_number}</code>\n👤 <b>${text}</b>`,
     });
     return true;
   }
 
   if (state === "n8n:url") {
-    if (!text) { await tg("sendMessage", { chat_id: chatId, text: "URL yuboring yoki o'chirish uchun -" }); return true; }
+    if (!text) {
+      await tg("sendMessage", { chat_id: chatId, text: "URL yuboring yoki o'chirish uchun -" });
+      return true;
+    }
     if (text === "-") {
       await setN8nWebhookUrl("");
       await clearSession(telegramId);
@@ -812,13 +1302,17 @@ async function handleAdminFSM(chatId: number, telegramId: number, msg: TgMessage
       return true;
     }
     if (!/^https?:\/\//i.test(text)) {
-      await tg("sendMessage", { chat_id: chatId, text: "❌ URL http:// yoki https:// bilan boshlanishi kerak." });
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: "❌ URL http:// yoki https:// bilan boshlanishi kerak.",
+      });
       return true;
     }
     await setN8nWebhookUrl(text);
     await clearSession(telegramId);
     await tg("sendMessage", {
-      chat_id: chatId, parse_mode: "HTML",
+      chat_id: chatId,
+      parse_mode: "HTML",
       text: `✅ n8n webhook URL saqlandi:\n<code>${text}</code>\n\nEndi har yangi kino qo'shilganda ushbu URL ga POST yuboriladi.`,
     });
     return true;
@@ -831,8 +1325,9 @@ async function handleAdminFSM(chatId: number, telegramId: number, msg: TgMessage
 const PROMT_TEXT = `🤖 <b>Bot qanday ishlaydi — to'liq tushuntirish</b>
 
 <b>1. Umumiy tuzilma</b>
-• Telegram → Webhook (<code>/api/public/telegram/webhook</code>) → bot mantiqi → Lovable Cloud (baza).
-• Telegram API chaqiruvlari Lovable connector gateway orqali ketadi (token kodda saqlanmaydi).
+• Telegram → Webhook (<code>/api/public/telegram/webhook</code>) → bot mantiqi → Supabase (baza).
+• Telegram API chaqiruvlari to'g'ridan-to'g'ri <code>api.telegram.org</code>'ga boradi (<code>BOT_TOKEN</code> env).
+• Webhook <code>X-Telegram-Bot-Api-Secret-Token</code> bilan himoyalangan (<code>TELEGRAM_WEBHOOK_SECRET</code>).
 
 <b>2. Baza jadvallari</b>
 • <code>users</code> — foydalanuvchi, premium muddati, bloklangan holati
@@ -841,6 +1336,8 @@ const PROMT_TEXT = `🤖 <b>Bot qanday ishlaydi — to'liq tushuntirish</b>
 • <code>payments</code> — chek rasmi, holati (pending/approved/rejected)
 • <code>settings</code> — karta ma'lumoti, admin ro'yxati, sozlamalar
 • <code>admin_sessions</code> — ko'p bosqichli dialoglar holati (FSM)
+• <code>reels_jobs</code> — Reels buyurtmalari (status, source_url, result_url)
+• <code>webhook_logs</code> — tashqi webhook loglari
 
 <b>3. Foydalanuvchi oqimi</b>
 1) <code>/start</code> → bot foydalanuvchini bazaga yozadi.
@@ -857,29 +1354,41 @@ const PROMT_TEXT = `🤖 <b>Bot qanday ishlaydi — to'liq tushuntirish</b>
 • <code>/stats</code> — foydalanuvchi o'z premium holati va muddatini ko'radi.
 
 <b>5. Admin panel (<code>/admin</code>)</b>
-• 🎬 Kino qo'shish: nomi → kodi → video fayl
+• 🎬 Kino qo'shish: nomi → kodi → poster URL → yil → janr → reyting → til → tavsif → video fayl → tasdiqlash
 • 🗑 Kino o'chirish (kod bo'yicha)
 • 📺 Kanal qo'shish / ❌ Kanal o'chirish
 • 📊 Statistika: foydalanuvchi, kino, premium soni
 • 📢 Xabar yuborish: hammaga matn/rasm/video
 • 💳 Karta ma'lumoti
 • 🔗 n8n webhook: yangi kino qo'shilganda tashqi tizimga POST yuboriladi (<code>webhook_logs</code> ga log yoziladi)
+• 🎞 Reels service URL: alohida Python mikroservis manzilini sozlash
 
-<b>6. Buyruqlar</b>
+<b>6. Reels mikroservisi</b>
+• Foydalanuvchi <b>🎞 Reels yasash</b> tugmasini bosib manba havolani yuboradi.
+• Bot <code>reels_jobs</code> ga yozuv qo'shadi va Python servisga (<code>reels-service</code>) POST qiladi.
+• Servis videoni yuklab olib, vertikal reels yasaydi va natijani botga <code>/api/public/reels/callback</code> orqali qaytaradi.
+• Callback <code>X-Reels-Secret</code> bilan himoyalangan. Natija foydalanuvchiga yuboriladi.
+
+<b>7. Buyruqlar</b>
 <code>/start</code> — boshlash
 <code>/stats</code> — o'z holatingiz
 <code>/myid</code> — Telegram ID
 <code>/admin</code> — admin panel (faqat admin)
 <code>/promt</code> — shu tushuntirish (faqat admin)
 
-<b>7. Xavfsizlik</b>
+<b>8. Xavfsizlik</b>
 • Admin huquqi faqat egasining Telegram ID si orqali beriladi.
 • Baza RLS bilan yopiq, server kaliti faqat serverda ishlatiladi.`;
 
 async function sendPromt(chatId: number) {
   const parts = PROMT_TEXT.match(/[\s\S]{1,3500}/g) || [];
   for (const part of parts) {
-    await tg("sendMessage", { chat_id: chatId, text: part, parse_mode: "HTML", disable_web_page_preview: true });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: part,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
   }
 }
 
@@ -891,11 +1400,16 @@ function escHtml(s: string) {
 async function sendDatabaseDump(chatId: number) {
   const { data, error } = await db()
     .from("movies")
-    .select("code,title,file_id,file_type,is_premium,views_count,created_at")
+    .select(
+      "code,title,file_id,file_type,is_premium,views_count,created_at,poster_url,year,genre,rating,language",
+    )
     .order("created_at", { ascending: false });
 
   if (error) {
-    await tg("sendMessage", { chat_id: chatId, text: "❌ Bazani o'qishda xatolik: " + error.message });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: "❌ Bazani o'qishda xatolik: " + error.message,
+    });
     return;
   }
   const rows = data || [];
@@ -904,23 +1418,40 @@ async function sendDatabaseDump(chatId: number) {
     return;
   }
 
-  const blocks = rows.map(
-    (m, i) =>
-      `<b>${i + 1}. ${escHtml(m.title)}</b>\n` +
+  const blocks = rows.map((m, i) => {
+    const meta: string[] = [];
+    if (m.year) meta.push(String(m.year));
+    if (m.genre) meta.push(m.genre);
+    if (m.language) meta.push(m.language);
+    if (m.rating != null) meta.push(`⭐${m.rating}`);
+    const metaLine = meta.length ? `\n${meta.join(" • ")}` : "";
+    return (
+      `<b>${i + 1}. ${escHtml(m.title)}</b>${metaLine}\n` +
       `Kod: <code>${escHtml(m.code)}</code>\n` +
       `Turi: ${escHtml(m.file_type)}${m.is_premium ? " • 💎 premium" : ""} • 👁 ${m.views_count}\n` +
-      `file_id: <code>${escHtml(m.file_id)}</code>`,
-  );
+      `file_id: <code>${escHtml(m.file_id)}</code>`
+    );
+  });
 
   let buf = `🗄 <b>Baza: ${rows.length} ta kino</b>\n\n`;
   for (const b of blocks) {
     if (buf.length + b.length + 2 > 3500) {
-      await tg("sendMessage", { chat_id: chatId, text: buf, parse_mode: "HTML", disable_web_page_preview: true });
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: buf,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      });
       buf = "";
     }
     buf += b + "\n\n";
   }
   if (buf.trim()) {
-    await tg("sendMessage", { chat_id: chatId, text: buf, parse_mode: "HTML", disable_web_page_preview: true });
+    await tg("sendMessage", {
+      chat_id: chatId,
+      text: buf,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
   }
 }

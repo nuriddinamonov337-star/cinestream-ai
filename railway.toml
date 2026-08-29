@@ -1,0 +1,7 @@
+# Railway deploy configuration (Nitro node-server preset).
+# Generated via Dockerfile build; Railway auto-detects the Dockerfile.
+[deploy]
+# Railway provides PORT; the node-server preset reads process.env.PORT automatically.
+startCommand = "node .output/server/index.mjs"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
