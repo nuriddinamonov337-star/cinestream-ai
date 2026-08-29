@@ -572,6 +572,14 @@ async function onMessage(msg: TgMessage) {
     await sendPromt(chatId);
     return;
   }
+  if (text === "/database" || text === "/db") {
+    if (!isAdminUser) {
+      await tg("sendMessage", { chat_id: chatId, text: "\u26d4 Bu buyruq faqat admin uchun." });
+      return;
+    }
+    await sendDatabaseDump(chatId);
+    return;
+  }
   if (text === "/myid") {
     await tg("sendMessage", { chat_id: chatId, text: `Sizning Telegram ID: <code>${tgUser.id}</code>`, parse_mode: "HTML" });
     return;
