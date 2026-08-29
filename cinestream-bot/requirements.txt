@@ -1,0 +1,6 @@
+aiogram==3.13.1
+aiohttp==3.10.10
+supabase==2.7.4
+python-dotenv==1.0.1
+uvicorn==0.32.0
+fastapi==0.115.0
