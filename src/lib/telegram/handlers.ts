@@ -882,3 +882,45 @@ async function sendPromt(chatId: number) {
     await tg("sendMessage", { chat_id: chatId, text: part, parse_mode: "HTML", disable_web_page_preview: true });
   }
 }
+
+// ---------- /database : barcha kinolar (nomi, kodi, file_id) ----------
+function escHtml(s: string) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+async function sendDatabaseDump(chatId: number) {
+  const { data, error } = await db()
+    .from("movies")
+    .select("code,title,file_id,file_type,is_premium,views_count,created_at")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    await tg("sendMessage", { chat_id: chatId, text: "❌ Bazani o'qishda xatolik: " + error.message });
+    return;
+  }
+  const rows = data || [];
+  if (rows.length === 0) {
+    await tg("sendMessage", { chat_id: chatId, text: "📭 Bazada hozircha kino yo'q." });
+    return;
+  }
+
+  const blocks = rows.map(
+    (m, i) =>
+      `<b>${i + 1}. ${escHtml(m.title)}</b>\n` +
+      `Kod: <code>${escHtml(m.code)}</code>\n` +
+      `Turi: ${escHtml(m.file_type)}${m.is_premium ? " • 💎 premium" : ""} • 👁 ${m.views_count}\n` +
+      `file_id: <code>${escHtml(m.file_id)}</code>`,
+  );
+
+  let buf = `🗄 <b>Baza: ${rows.length} ta kino</b>\n\n`;
+  for (const b of blocks) {
+    if (buf.length + b.length + 2 > 3500) {
+      await tg("sendMessage", { chat_id: chatId, text: buf, parse_mode: "HTML", disable_web_page_preview: true });
+      buf = "";
+    }
+    buf += b + "\n\n";
+  }
+  if (buf.trim()) {
+    await tg("sendMessage", { chat_id: chatId, text: buf, parse_mode: "HTML", disable_web_page_preview: true });
+  }
+}
